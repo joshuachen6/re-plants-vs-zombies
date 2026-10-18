@@ -9,11 +9,14 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <stdarg.h>
+#include <time.h>
 
 #ifdef __SWITCH__
 #include <switch.h>
 #elifdef __3DS__
 #include <3ds.h>
+#elifdef __EMSCRIPTEN__
+#include <emscripten.h>
 #endif
 
 #include "misc/PerfTimer.h"
@@ -44,6 +47,19 @@ void Sexy::PrintF(const char *text, ...)
 #endif
 
 	fprintf(stdout, "%s", str);
+}
+
+void Sexy::SexySleep(int theMilliseconds)
+{
+#ifdef __EMSCRIPTEN__
+	// nanosleep() busy-waits in the browser; this suspends via Asyncify and lets the page run
+	emscripten_sleep(theMilliseconds);
+#else
+	timespec ts;
+	ts.tv_sec = theMilliseconds / 1000;
+	ts.tv_nsec = (theMilliseconds % 1000) * 1000000;
+	nanosleep(&ts, &ts);
+#endif
 }
 
 int Sexy::Rand()

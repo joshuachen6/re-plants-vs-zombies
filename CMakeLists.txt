@@ -55,6 +55,18 @@ elseif(NINTENDO_3DS)
 	list(APPEND PLAT_INCLUDES
 		${CMAKE_CURRENT_SOURCE_DIR}/SexyAppFramework/platform/3ds
 	)
+elseif(EMSCRIPTEN)
+	set(NO_GLEW ON)
+	list(APPEND SOURCES
+		${CMAKE_CURRENT_SOURCE_DIR}/SexyAppFramework/platform/web/graphics/Window.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/SexyAppFramework/platform/web/graphics/GLInterface.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/SexyAppFramework/platform/web/Input.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/SexyAppFramework/platform/web/Web.cpp
+	)
+	list(APPEND PLAT_INCLUDES
+		${CMAKE_CURRENT_SOURCE_DIR}/SexyAppFramework/platform/web
+	)
+	include(CMake/Emscripten.cmake)
 else()
 	set(VORBIS_LIBS vorbisfile vorbis)
 	list(APPEND SOURCES
@@ -69,9 +81,11 @@ endif()
 
 option(CONSOLE "Show console on Windows" ON)
 
-find_package(ZLIB REQUIRED)
-find_package(JPEG REQUIRED)
-find_package(PNG REQUIRED)
+if (NOT EMSCRIPTEN) # these come from Emscripten ports instead
+	find_package(ZLIB REQUIRED)
+	find_package(JPEG REQUIRED)
+	find_package(PNG REQUIRED)
+endif()
 find_package(SDL2 REQUIRED)
 if (NOT NO_GLEW)
 	find_package(GLEW REQUIRED)
@@ -101,7 +115,12 @@ if (LOW_MEMORY)
 endif()
 target_compile_definitions(re-plants-vs-zombies PRIVATE IMG_DOWNSCALE=${DOWNSCALE_COUNT})
 
-target_link_libraries(re-plants-vs-zombies jpeg png z SDL2_mixer_ext_Static openmpt mpg123 ${VORBIS_LIBS} ogg ${SDL2_LIBRARIES} ${GLEW_LIBRARIES})
+if (EMSCRIPTEN)
+	# SDL2_mixer_ext_Static carries libopenmpt; the port libraries are linked through link options
+	target_link_libraries(re-plants-vs-zombies SDL2_mixer_ext_Static ${SDL2_LIBRARIES})
+else()
+	target_link_libraries(re-plants-vs-zombies jpeg png z SDL2_mixer_ext_Static openmpt mpg123 ${VORBIS_LIBS} ogg ${SDL2_LIBRARIES} ${GLEW_LIBRARIES})
+endif()
 
 if (WIN32)
 	target_link_options(re-plants-vs-zombies PRIVATE -static -static-libgcc -static-libstdc++)
@@ -138,6 +157,8 @@ elseif (NINTENDO_3DS)
 	ctr_create_3dsx(re-plants-vs-zombies
 		SMDH re-plants-vs-zombies.smdh
 	)
+elseif (EMSCRIPTEN)
+	pvz_configure_web_target(re-plants-vs-zombies)
 else()
 	target_link_libraries(re-plants-vs-zombies GL)
 endif()

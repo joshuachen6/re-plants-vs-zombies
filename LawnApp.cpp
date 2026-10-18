@@ -3183,6 +3183,7 @@ void LawnApp::PreloadForUser()
 			if (SeedTypeAvailable(i) || HasFinishedAdventure())
 			{
 				Plant::PreloadPlantResources(i);
+				LoadingThreadYield();
 				if (mCompletedLoadingThreadTasks < aNumTasks)
 				{
 					mCompletedLoadingThreadTasks += 68;
@@ -3215,6 +3216,7 @@ void LawnApp::PreloadForUser()
 			}
 
 			Zombie::PreloadZombieResources(i);
+			LoadingThreadYield();
 			if (mCompletedLoadingThreadTasks < aNumTasks)
 			{
 				mCompletedLoadingThreadTasks += 68;

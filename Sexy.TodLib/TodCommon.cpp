@@ -1129,6 +1129,7 @@ bool TodResourceManager::TodLoadNextResource()
 {
 	//GetTickCount();
 	TodHesitationTrace("preres");
+	gSexyAppBase->LoadingThreadYield();
 
 	while (mCurResGroupListItr != mCurResGroupList->end())
 	{

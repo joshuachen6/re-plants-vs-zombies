@@ -16,6 +16,8 @@
 #include <codecvt>
 #elifdef __3DS__
 #include <3ds.h>
+#elifdef __EMSCRIPTEN__
+#include <emscripten.h>
 #endif
 
 #include "SexyAppBase.h"
@@ -177,6 +179,8 @@ SexyAppBase::SexyAppBase()
 	mChangeDirTo = "sdmc:/switch/PlantsvsZombies/";
 #elifdef __3DS__
 	mChangeDirTo = "sdmc:/3ds/PlantsvsZombies/";
+#elifdef __EMSCRIPTEN__
+	mChangeDirTo = "/pvz/"; // game data is placed here by the page (see web/pre.js)
 #else
 	mChangeDirTo = "./";
 #endif
@@ -1170,13 +1174,12 @@ std::string SexyAppBase::GetProductVersion(const std::string& thePath)
 
 void SexyAppBase::WaitForLoadingThread()
 {
-	int ms = 20;
-
-	timespec ts;
-	ts.tv_sec = ms / 1000;
-	ts.tv_nsec = (ms % 1000) * 1000000;
+#ifdef __EMSCRIPTEN__
+	RunLoadingThreadOnMainThread();
+#else
 	while ((mLoadingThreadStarted) && (!mLoadingThreadCompleted))
-		nanosleep(&ts, &ts);
+		SexySleep(20);
+#endif
 }
 
 void SexyAppBase::SetCursorImage(int theCursorNum, Image* theImage)
@@ -1994,7 +1997,12 @@ void SexyAppBase::ReadFromRegistry()
 	if (mRegKey.length() == 0)
 		return;
 
+#ifdef __EMSCRIPTEN__
+	// Keep it with the save data on the IndexedDB-backed mount so it persists between visits
+	regemu::SetRegFile("/pvz/savedata/registry.regemu");
+#else
 	regemu::SetRegFile("registry.regemu");
+#endif
 
 	int anInt;
 	if (RegistryReadInteger("MusicVolume", &anInt))
@@ -2249,7 +2257,7 @@ void SexyAppBase::ShutdownHook()
 
 void SexyAppBase::Shutdown()
 {
-	if ((mPrimaryThreadId != 0) && ((void*)pthread_self() != mPrimaryThreadId))
+	if (!IsPrimaryThread())
 	{
 		mLoadingFailed = true;
 	}
@@ -3410,7 +3418,7 @@ void SexyAppBase::ClearKeysDown()
 void SexyAppBase::WriteDemoTimingBlock()
 {
 	// Demo writing functions can only be called from the main thread and after SexyAppBase::Init
-	DBG_ASSERTE((void*)pthread_self() == mPrimaryThreadId);
+	DBG_ASSERTE(IsPrimaryThread());
 
 	while (mUpdateCount - mLastDemoUpdateCnt > 15)
 	{
@@ -3848,6 +3856,61 @@ void* SexyAppBase::LoadingThreadProcStub(void *theArg)
 	return 0;
 }
 
+#ifdef __EMSCRIPTEN__
+// Browsers only offer threads with SharedArrayBuffer and cross-origin isolation, so on the web the
+// loading "thread" runs on the main thread, started from the main loop. To keep the title screen
+// animating, the loading code calls LoadingThreadYield(), which runs main loop iterations until a
+// frame is drawn (the same kind of re-entrancy as Dialog::WaitForResult).
+static bool gLoadingOnMainThread = false;
+static bool gInLoadingYield = false;
+static uint32_t gNextLoadingYieldTick;
+
+static const int LOADING_SLICE_MS = 33;
+
+void SexyAppBase::RunLoadingThreadOnMainThread()
+{
+	if ((!mLoadingThreadStarted) || (mLoadingThreadCompleted) || (gLoadingOnMainThread))
+		return;
+
+	gLoadingOnMainThread = true;
+	gNextLoadingYieldTick = SDL_GetTicks() + LOADING_SLICE_MS;
+	LoadingThreadProcStub(this);
+	gLoadingOnMainThread = false;
+}
+#endif
+
+void SexyAppBase::LoadingThreadYield()
+{
+#ifdef __EMSCRIPTEN__
+	if ((!gLoadingOnMainThread) || (gInLoadingYield) || ((int)(SDL_GetTicks() - gNextLoadingYieldTick) < 0))
+		return;
+
+	gInLoadingYield = true;
+
+	// Drawing ends in GLInterface::Flush, which lets the browser run until the next frame
+	int aDrawCount = mDrawCount;
+	uint32_t aGiveUpTick = SDL_GetTicks() + 100;
+	while ((mDrawCount == aDrawCount) && ((int)(SDL_GetTicks() - aGiveUpTick) < 0) && (UpdateAppStep(NULL)))
+		;
+	if (mDrawCount == aDrawCount)
+		SexySleep(0);
+
+	gInLoadingYield = false;
+	gNextLoadingYieldTick = SDL_GetTicks() + LOADING_SLICE_MS;
+#endif
+}
+
+bool SexyAppBase::IsPrimaryThread()
+{
+#ifdef __EMSCRIPTEN__
+	// Code running from the loading proc counts as the loading thread, except for main loop
+	// iterations run by LoadingThreadYield
+	if ((gLoadingOnMainThread) && (!gInLoadingYield))
+		return false;
+#endif
+	return (mPrimaryThreadId == 0) || ((void*)pthread_self() == mPrimaryThreadId);
+}
+
 void SexyAppBase::StartLoadingThread()
 {	
 	if (!mLoadingThreadStarted)
@@ -3856,9 +3919,11 @@ void SexyAppBase::StartLoadingThread()
 		//::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);		
 		mLoadingThreadStarted = true;
 		//_beginthread(LoadingThreadProcStub, 0, this);
+#ifndef __EMSCRIPTEN__ // DoMainLoop() runs it on the web
 		pthread_t id;
 		pthread_create(&id, NULL, LoadingThreadProcStub, this);
 		pthread_detach(id);
+#endif
 	}
 }
 void SexyAppBase::CursorThreadProc()
@@ -4385,10 +4450,7 @@ bool SexyAppBase::Process(bool allowSleep)
 					// Wait till next processing cycle
 					++mSleepCount;
 
-					timespec ts;
-					ts.tv_sec = aTimeToNextFrame / 1000;
-					ts.tv_nsec = (aTimeToNextFrame % 1000) * 1000000;
-					nanosleep(&ts, &ts);
+					SexySleep(aTimeToNextFrame);
 
 					aCumSleepTime += aTimeToNextFrame;					
 				}
@@ -4409,10 +4471,11 @@ bool SexyAppBase::Process(bool allowSleep)
 				if (!allowSleep)
 					return false;
 
-				timespec ts;
-				ts.tv_sec = aLoadingYieldSleepTime / 1000;
-				ts.tv_nsec = (aLoadingYieldSleepTime % 1000) * 1000000;
-				nanosleep(&ts, &ts);
+#ifdef __EMSCRIPTEN__
+				// Inside LoadingThreadYield, the loading code is what we'd be waiting on
+				if (!gLoadingOnMainThread)
+#endif
+				SexySleep(aLoadingYieldSleepTime);
 			}
 		}
 	}
@@ -4461,6 +4524,9 @@ void SexyAppBase::DoMainLoop()
 	{
 		if (mExitToTop)
 			mExitToTop = false;
+#ifdef __EMSCRIPTEN__
+		RunLoadingThreadOnMainThread();
+#endif
 		UpdateApp();
 	}
 }
@@ -4504,10 +4570,7 @@ bool SexyAppBase::UpdateAppStep(bool* updated)
 		{
 			if (mStepMode==2)
 			{
-				timespec ts;
-				ts.tv_sec = mFrameTime / 1000;
-				ts.tv_nsec = (mFrameTime % 1000) * 1000000;
-				nanosleep(&ts, &ts);
+				SexySleep(mFrameTime);
 
 				mUpdateAppState = UPDATESTATE_PROCESS_DONE; // skip actual update until next step
 			}

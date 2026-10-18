@@ -17,10 +17,31 @@ Fork of Patoke's PVZ GOTY decompilation with the following objectives:
 | Nintendo Switch | sdmc:/switch/PlantsvsZombies | Works on real hardware and Citron. Kenji-NX crashes on boot.                           |
 | Nintendo 3DS    | sdmc:/3ds/PlantsvsZombies    | In development, might not have enough memory for Old 3DS, might barely work on New 3DS |
 | Nintendo Wii U  |                              | No work started yet, but planned                                                       |
+| Web (wasm)      | Bundled, or chosen in-page   | Works in Chromium; see [Building for the web](#building-for-the-web)                   |
 
 To play the game, you need the game data from PvZ GOTY. Copy "main.pak" and the "properties" folder to the path where the re-plants-vs-zombies executable is (or one of the above data paths for console ports).
 
 Alternatively, you could use a PvZ .pak extractor tool and use extracted data instead of main.pak, but that's up to you
+
+## Building for the web
+
+The game can be compiled to WebAssembly with [Emscripten](https://emscripten.org/docs/getting_started/downloads.html). SDL2, zlib, libpng and libjpeg come from Emscripten's ports, and libopenmpt is downloaded and built automatically, so only emsdk, CMake, Ninja and make are needed:
+
+```
+source /path/to/emsdk/emsdk_env.sh
+emcmake cmake -G Ninja -B build-web -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web
+```
+
+This produces `re-plants-vs-zombies.html`, `.js` and `.wasm` in `build-web`. Serve that folder over HTTP (for example `python3 -m http.server -d build-web`) and open the .html file. The page asks the player to choose their PvZ GOTY folder; the files are only loaded into the tab, not uploaded.
+
+To bundle the game data into the build instead, point `PVZ_WEB_DATA_DIR` at a folder containing `main.pak` and `properties`. This adds a `re-plants-vs-zombies.data` file that the page downloads at startup:
+
+```
+emcmake cmake -G Ninja -B build-web -DCMAKE_BUILD_TYPE=Release -DPVZ_WEB_DATA_DIR=/path/to/pvz-data
+```
+
+Profiles and saved games are stored in the browser's IndexedDB. The web port lives in `SexyAppFramework/platform/web` (WebGL renderer, window, input), `web/` (page shell and filesystem setup) and `CMake/Emscripten.cmake`. Unlike the other platforms, the main loop runs under Asyncify so it can hand control back to the browser every frame, and resources load on the main thread instead of a loading thread.
 
 Original README continues below
 

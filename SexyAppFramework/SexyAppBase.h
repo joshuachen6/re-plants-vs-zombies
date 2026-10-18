@@ -358,6 +358,10 @@ protected:
 	// Loading thread methods	
 	virtual void			LoadingThreadCompleted();
 	static void*			LoadingThreadProcStub(void *theArg);	
+#ifdef __EMSCRIPTEN__
+	void					RunLoadingThreadOnMainThread();
+#endif
+	bool					IsPrimaryThread();
 
 	// Cursor thread methods
 	void					CursorThreadProc();
@@ -442,6 +446,7 @@ public:
 	virtual void			Unmute(bool autoMute = false);
 
 	void					StartLoadingThread();
+	void					LoadingThreadYield();
 	virtual double			GetLoadingThreadProgress();	
 
 	void					CopyToClipboard(const std::string& theString);

@@ -832,13 +832,13 @@ bool ImageLib::WriteJPEGImage(const std::string& theFileName, Image* theImage)
 	cinfo.image_height = theImage->mHeight;
 	cinfo.input_components = 3;
     cinfo.in_color_space = JCS_RGB;
-    cinfo.optimize_coding = 1;
+    cinfo.optimize_coding = TRUE;
     jpeg_set_defaults(&cinfo);
     jpeg_set_quality(&cinfo, 80, TRUE);
 
 	jpeg_stdio_dest(&cinfo, fp);
 
-	jpeg_start_compress(&cinfo, true);
+	jpeg_start_compress(&cinfo, TRUE);
 
 	int row_stride = theImage->GetWidth() * 3;
 
