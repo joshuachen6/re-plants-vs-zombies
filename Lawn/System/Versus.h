@@ -11,6 +11,7 @@
 
 class LawnApp;
 class Board;
+class ZombieChooserScreen;
 namespace Sexy
 {
 	class Graphics;
@@ -22,7 +23,8 @@ namespace Sexy
 
 // ---- Tuning -------------------------------------------------------------------------------------
 constexpr int VERSUS_NUM_PLANT_PACKETS = 6;
-constexpr int VERSUS_NUM_ZOMBIE_PACKETS = 4;
+constexpr int VERSUS_NUM_ZOMBIE_PACKETS = 4;			// picked from gVersusZombieOffers before the match
+constexpr int VERSUS_NUM_ZOMBIE_OFFERS = 15;
 constexpr int VERSUS_STARTING_SUN = 150;
 constexpr int VERSUS_STARTING_INCOME = 25;			// sun paid out every VERSUS_INCOME_INTERVAL
 constexpr int VERSUS_INCOME_INTERVAL = 600;			// updates (100 per second)
@@ -35,7 +37,7 @@ struct VersusZombieOffer
 	int						mRefreshTime;			// cooldown in updates, like Plant::GetRefreshTime
 };
 
-extern const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_PACKETS];
+extern const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS];
 
 // ---- Session ------------------------------------------------------------------------------------
 enum VersusState
@@ -85,8 +87,10 @@ public:
 	std::string				mRoomCode;
 	bool					mOpponentReady;
 	bool					mGo;					// both players have picked seeds
-	bool					mZombiePacketsAdded;
+	bool					mZombiePacketsAdded;	// the seed bank has grown to hold the zombie packets
+	bool					mZombiesChosen;
 	bool					mShowingWaitAdvice;
+	ZombieChooserScreen*	mZombieChooser;
 	int						mIncome;
 	int						mIncomeCounter;
 	int						mSnapshotCounter;
@@ -109,6 +113,8 @@ public:
 	// Hooks from the board and seed chooser
 	int						GetNumSeedsInBank() const;
 	void					OnSeedsChosen(Board* theBoard);
+	void					UpdateWaitingToStart(Board* theBoard);
+	void					OnZombiesChosen(const std::vector<SeedType>& theZombieSeeds);
 	bool					CanStartLevel() const { return mGo; }
 	void					SendZombie(SeedType theSeedType, int theRow);
 	void					OnZombiesWon();
@@ -123,6 +129,7 @@ public:
 
 private:
 	void					ResetMatch();
+	void					RemoveZombieChooser();
 	void					HandleControl(const std::string& theMessage);
 	void					HandleGameData(const std::string& theData);
 	void					HandleDisconnect();

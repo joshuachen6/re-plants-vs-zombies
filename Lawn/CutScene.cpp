@@ -1475,18 +1475,15 @@ void CutScene::Update()
 		UpdateIntro();
 		return;
 	}
-	// Versus: once seeds are picked, hold before "Ready, Set, Plant!" until the opponent is ready too
+	// Versus: once plants are picked, hold before "Ready, Set, Plant!" while the player picks zombies and
+	// until the opponent is ready too
 	if (mApp->IsVersusMode() && !mSeedChoosing && mCutsceneTime >= TimePanLeftEnd + mCrazyDaveTime)
 	{
 		Versus* aVersus = mApp->mVersus;
 		if (!aVersus->CanStartLevel())
 		{
 			aCutsceneTimeStop = true;
-			if (!aVersus->mShowingWaitAdvice)
-			{
-				mBoard->DisplayAdvice(__S("Waiting for your opponent..."), MessageStyle::MESSAGE_STYLE_HINT_STAY, AdviceType::ADVICE_NONE);
-				aVersus->mShowingWaitAdvice = true;
-			}
+			aVersus->UpdateWaitingToStart(mBoard);
 		}
 		else if (aVersus->mShowingWaitAdvice)
 		{

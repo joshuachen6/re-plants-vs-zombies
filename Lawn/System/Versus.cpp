@@ -8,6 +8,7 @@
 #include "../Widget/LawnDialog.h"
 #include "../Widget/GameButton.h"
 #include "../Widget/SeedChooserScreen.h"
+#include "../Widget/ZombieChooserScreen.h"
 #include "../../LawnApp.h"
 #include "../../Resources.h"
 #include "../../Sexy.TodLib/TodCommon.h"
@@ -19,11 +20,24 @@
 #include <algorithm>
 #include <cstdlib>
 
-const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_PACKETS] = {
+// Every zombie that can be sent, in the order the zombie chooser shows them. Costs come from the
+// I, Zombie puzzles (Plant::GetCost).
+const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS] = {
 	{ SeedType::SEED_ZOMBIE_NORMAL,			300 },
 	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	500 },
+	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	500 },
 	{ SeedType::SEED_ZOMBIE_PAIL,			750 },
+	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	750 },
+	{ SeedType::SEED_ZOMBIE_LADDER,			750 },
+	{ SeedType::SEED_ZOMBIE_BALLOON,		750 },
+	{ SeedType::SEED_ZOMBIE_IMP,			300 },
+	{ SeedType::SEED_ZOMBIE_DIGGER,			1000 },
+	{ SeedType::SEED_ZOMBIE_BUNGEE,			1000 },
+	{ SeedType::SEED_ZOMBIE_POGO,			1000 },
 	{ SeedType::SEED_ZOMBIE_FOOTBALL,		1500 },
+	{ SeedType::SEED_ZOMBONI,				1500 },
+	{ SeedType::SEED_ZOMBIE_DANCER,			2000 },
+	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		3000 },
 };
 
 // Binary messages, relayed untouched by the server. Multi-byte values are little-endian.
@@ -115,7 +129,7 @@ namespace
 	}
 }
 
-Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE)
+Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE), mZombieChooser(nullptr)
 {
 	ResetMatch();
 }
@@ -126,6 +140,7 @@ void Versus::ResetMatch()
 	mOpponentReady = false;
 	mGo = false;
 	mZombiePacketsAdded = false;
+	mZombiesChosen = false;
 	mShowingWaitAdvice = false;
 	mIncome = VERSUS_STARTING_INCOME;
 	mIncomeCounter = 0;
@@ -160,6 +175,7 @@ void Versus::StartMatchmaking(const std::string& theJoinCode)
 
 void Versus::Cancel()
 {
+	RemoveZombieChooser();
 	if (mConnection.IsOpen())
 		mConnection.SendText("{\"t\":\"leave\"}");
 	mConnection.Close();
@@ -470,11 +486,12 @@ int Versus::GetNumSeedsInBank() const
 
 void Versus::OnSeedsChosen(Board* theBoard)
 {
+	// Make room for the zombie packets, which are picked next in the zombie chooser
 	mZombiePacketsAdded = true;
 	theBoard->mSeedBank->UpdateWidth();
 	for (int i = 0; i < VERSUS_NUM_ZOMBIE_PACKETS; i++)
 	{
-		theBoard->mSeedBank->mSeedPackets[VERSUS_NUM_PLANT_PACKETS + i].SetPacketType(gVersusZombieOffers[i].mSeedType, SeedType::SEED_NONE);
+		theBoard->mSeedBank->mSeedPackets[VERSUS_NUM_PLANT_PACKETS + i].mPacketType = SeedType::SEED_NONE;
 	}
 
 	// The seed chooser's Menu button lingers until the level starts, on top of the opponent view
@@ -483,8 +500,54 @@ void Versus::OnSeedsChosen(Board* theBoard)
 		mApp->mSeedChooserScreen->mMenuButton->mBtnNoDraw = true;
 		mApp->mSeedChooserScreen->mMenuButton->mDisabled = true;
 	}
+}
 
+// Called every update while the intro holds before "Ready, Set, Plant!". Both games hold at the
+// same point and only report ready from there, so the server's "go" starts them together.
+void Versus::UpdateWaitingToStart(Board* theBoard)
+{
+	if (!mZombiesChosen)
+	{
+		if (mZombieChooser == nullptr && mState == VERSUS_STATE_CHOOSING_SEEDS)
+		{
+			mZombieChooser = new ZombieChooserScreen(mApp);
+			mApp->mWidgetManager->AddWidget(mZombieChooser);
+			mApp->mWidgetManager->BringToFront(mZombieChooser);
+			mApp->mWidgetManager->SetFocus(mZombieChooser);
+		}
+	}
+	else if (!mShowingWaitAdvice)
+	{
+		theBoard->DisplayAdvice(__S("Waiting for your opponent..."), MessageStyle::MESSAGE_STYLE_HINT_STAY, AdviceType::ADVICE_NONE);
+		mShowingWaitAdvice = true;
+	}
+}
+
+void Versus::OnZombiesChosen(const std::vector<SeedType>& theZombieSeeds)
+{
+	Board* aBoard = mApp->mBoard;
+	if (aBoard == nullptr || theZombieSeeds.size() != VERSUS_NUM_ZOMBIE_PACKETS)
+		return;
+
+	for (int i = 0; i < VERSUS_NUM_ZOMBIE_PACKETS; i++)
+	{
+		aBoard->mSeedBank->mSeedPackets[VERSUS_NUM_PLANT_PACKETS + i].SetPacketType(theZombieSeeds[i], SeedType::SEED_NONE);
+	}
+
+	mZombiesChosen = true;
+	RemoveZombieChooser();
+	mApp->mWidgetManager->SetFocus(aBoard);
 	mConnection.SendText("{\"t\":\"ready\"}");
+}
+
+void Versus::RemoveZombieChooser()
+{
+	if (mZombieChooser)
+	{
+		mApp->mWidgetManager->RemoveWidget(mZombieChooser);
+		mApp->SafeDeleteWidget(mZombieChooser);
+		mZombieChooser = nullptr;
+	}
 }
 
 void Versus::OnZombiesWon()

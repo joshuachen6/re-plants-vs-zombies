@@ -46,8 +46,9 @@ emcmake cmake -G Ninja -B build-web -DCMAKE_BUILD_TYPE=Release -DPVZ_WEB_DATA_DI
 The web build adds a **Versus** button to the main menu: a head-to-head mode in the style of Bloons TD Battles. Each player defends their own lawn, and the only zombies are the ones your opponent sends you.
 
 - One player clicks Versus and leaves the code empty to make a room; the other enters the 4-letter room code.
-- Both pick 6 plants (every plant is available) and the match starts once both have clicked Let's Rock.
-- The four zombie packets on the right of the seed bank send that zombie to your opponent. Pick one up and click a lane in the opponent view (top right), or a row of your own lawn, to send it down that lane.
+- Both pick 6 plants (every plant is available), then 4 zombies from the 15 that can be sent. The zombie chooser shows each zombie's cost, income bonus and cooldown, and whether your opponent is ready.
+- The match starts for both players at the same moment, once both have finished choosing.
+- Your zombie packets sit on the right of the seed bank. Pick one up and click a lane in the opponent view (top right), or a row of your own lawn, to send that zombie down the same lane of your opponent's lawn.
 - There is no falling sun. Instead you get income every 6 seconds, and every zombie you send raises your income, so sending zombies is also how you grow your economy. Sunflowers still work.
 - The top-right view shows your opponent's lawn, sun and income, updated 10 times a second.
 - The first player whose lawn a zombie gets through loses. Lawnmowers work as usual. Leaving the match forfeits it.
