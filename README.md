@@ -41,6 +41,26 @@ To bundle the game data into the build instead, point `PVZ_WEB_DATA_DIR` at a fo
 emcmake cmake -G Ninja -B build-web -DCMAKE_BUILD_TYPE=Release -DPVZ_WEB_DATA_DIR=/path/to/pvz-data
 ```
 
+### Versus mode (multiplayer)
+
+The web build adds a **Versus** button to the main menu: a head-to-head mode in the style of Bloons TD Battles. Each player defends their own lawn, and the only zombies are the ones your opponent sends you.
+
+- One player clicks Versus and leaves the code empty to make a room; the other enters the 4-letter room code.
+- Both pick 6 plants (every plant is available) and the match starts once both have clicked Let's Rock.
+- The four zombie packets on the right of the seed bank send that zombie to your opponent. Pick one up and click a lane in the opponent view (top right), or a row of your own lawn, to send it down that lane.
+- There is no falling sun. Instead you get income every 6 seconds, and every zombie you send raises your income, so sending zombies is also how you grow your economy. Sunflowers still work.
+- The top-right view shows your opponent's lawn, sun and income, updated 10 times a second.
+- The first player whose lawn a zombie gets through loses. Lawnmowers work as usual. Leaving the match forfeits it.
+
+The game talks to a small relay server in `server/` (Node.js), which pairs players by room code and forwards their messages:
+
+```
+cd server && npm install
+node relay.js --port 8787 --static ../build-web
+```
+
+With `--static` the relay also serves the game, so opening `http://localhost:8787/` in two browser windows is enough to play locally. By default the game connects to `/versus` on the server it was loaded from; add `?server=ws://host:port` to the page URL to use a different relay. `server/deploy/` has a systemd unit and an nginx snippet for running the relay behind nginx. Run `npm test` in `server/` to test the relay. Balance values (income, zombie cooldowns) are constants at the top of `Lawn/System/Versus.h` and `Versus.cpp`.
+
 Profiles and saved games are stored in the browser's IndexedDB. The web port lives in `SexyAppFramework/platform/web` (WebGL renderer, window, input), `web/` (page shell and filesystem setup) and `CMake/Emscripten.cmake`. Unlike the other platforms, the main loop runs under Asyncify so it can hand control back to the browser every frame, and resources load on the main thread instead of a loading thread.
 
 Original README continues below

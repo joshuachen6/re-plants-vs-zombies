@@ -73,7 +73,8 @@ NewOptionsDialog::NewOptionsDialog(LawnApp* theApp, bool theFromGameSelector) :
 
     if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ICE || 
         mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || 
-        mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)
+        mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM ||
+        mApp->IsVersusMode())  // a Versus match can't be restarted on one side
     {
         mRestartButton->SetVisible(false);
     }

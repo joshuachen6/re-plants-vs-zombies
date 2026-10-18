@@ -1,0 +1,14 @@
+{
+  "name": "pvz-versus-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebSocket relay server for the re-plants-vs-zombies Versus mode",
+  "main": "relay.js",
+  "scripts": {
+    "start": "node relay.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}

@@ -119,6 +119,10 @@
 		var Module = {
 			canvas: canvas,
 
+			// Versus relay server (server/relay.js); defaults to /versus on the server this page came from
+			pvzServerUrl: new URLSearchParams(location.search).get('server') ||
+				((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/versus'),
+
 			setStatus: function (text) {
 				// Emscripten reports download progress as "Downloading data... (12/34)"
 				const match = text.match(/\((\d+(?:\.\d+)?)\/(\d+)\)/);

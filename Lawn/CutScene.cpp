@@ -14,6 +14,7 @@
 #include "Widget/LawnDialog.h"
 #include "Widget/GameButton.h"
 #include "System/PlayerInfo.h"
+#include "System/Versus.h"
 #include "Widget/StoreScreen.h"
 #include "Widget/ChallengeScreen.h"
 #include "../Sexy.TodLib/TodFoley.h"
@@ -1474,6 +1475,26 @@ void CutScene::Update()
 		UpdateIntro();
 		return;
 	}
+	// Versus: once seeds are picked, hold before "Ready, Set, Plant!" until the opponent is ready too
+	if (mApp->IsVersusMode() && !mSeedChoosing && mCutsceneTime >= TimePanLeftEnd + mCrazyDaveTime)
+	{
+		Versus* aVersus = mApp->mVersus;
+		if (!aVersus->CanStartLevel())
+		{
+			aCutsceneTimeStop = true;
+			if (!aVersus->mShowingWaitAdvice)
+			{
+				mBoard->DisplayAdvice(__S("Waiting for your opponent..."), MessageStyle::MESSAGE_STYLE_HINT_STAY, AdviceType::ADVICE_NONE);
+				aVersus->mShowingWaitAdvice = true;
+			}
+		}
+		else if (aVersus->mShowingWaitAdvice)
+		{
+			mBoard->ClearAdvice(AdviceType::ADVICE_NONE);
+			aVersus->mShowingWaitAdvice = false;
+		}
+	}
+
 	if (!aCutsceneTimeStop)
 	{
 		mCutsceneTime += 10;
@@ -1560,7 +1581,11 @@ void CutScene::UpdateZombiesWon()
 	// 过场结束，游戏失败
 	if (mCutsceneTime == LostTimeEnd)
 	{
-		if (mApp->IsSurvivalMode())
+		if (mApp->IsVersusMode())
+		{
+			mApp->mVersus->ShowResult();
+		}
+		else if (mApp->IsSurvivalMode())
 		{
 			int aFlagsCompleted = mBoard->GetSurvivalFlagsCompleted();
 			SexyString aFlagsStr = mApp->Pluralize(aFlagsCompleted, __S("[ONE_FLAG]"), __S("[COUNT_FLAGS]"));
@@ -1585,6 +1610,9 @@ bool CutScene::IsCutSceneOver()
 //0x43C910
 void CutScene::ZombieWonClick()
 {
+	if (mApp->IsVersusMode())  // the result dialog takes it from here
+		return;
+
 	if (IsCutSceneOver() || mApp->mTodCheatKeys)
 	{
 		mApp->EndLevel();

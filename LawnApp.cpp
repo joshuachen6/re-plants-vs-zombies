@@ -35,6 +35,8 @@
 #include "Sexy.TodLib/TodStringFile.h"
 #include "Lawn/Widget/AlmanacDialog.h"
 #include "Lawn/Widget/NewUserDialog.h"
+#include "Lawn/Widget/VersusDialog.h"
+#include "Lawn/System/Versus.h"
 #include "Lawn/Widget/ContinueDialog.h"
 #include "Lawn/System/ReanimationLawn.h"
 #include "Lawn/Widget/ChallengeScreen.h"
@@ -99,6 +101,7 @@ LawnApp::LawnApp()
 	mGameScene = GameScenes::SCENE_LOADING;
 	mPoolEffect = nullptr;
 	mZenGarden = nullptr;
+	mVersus = new Versus(this);
 	mEffectSystem = nullptr;
 	mReanimatorCache = nullptr;
 	mCloseRequest = false;
@@ -290,6 +293,9 @@ void LawnApp::Shutdown()
 			mZenGarden = nullptr;
 		}
 
+		delete mVersus;
+		mVersus = nullptr;
+
 		if (mEffectSystem)
 		{
 			mEffectSystem->EffectSystemDispose();
@@ -328,6 +334,10 @@ void LawnApp::KillBoard()
 	KillSeedChooserScreen();
 	if (mBoard)
 	{
+		// Leaving a Versus board for any reason forfeits the match
+		if (IsVersusMode())
+			mVersus->Cancel();
+
 /*
 #ifdef _DEBUG
 		BetaRecordLevelStats();
@@ -358,6 +368,9 @@ bool LawnApp::CanPauseNow()
 		return false;
 
 	if (mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)  // 处于禅境花园或智慧树
+		return false;
+
+	if (IsVersusMode())  // the opponent's game keeps going
 		return false;
 
 	return GetDialogCount() <= 0;  // 不存在对话
@@ -679,7 +692,9 @@ void LawnApp::DoConfirmBackToMain()
 		Dialogs::DIALOG_CONFIRM_BACK_TO_MAIN, 
 		true, 
 		__S("Leave Game?"/*"[LEAVE_GAME]"*/),
-		__S("Do you want to return\nto the main menu?\n\nYour game will be saved."/*"[LEAVE_GAME_HEADER]"*/), 
+		IsVersusMode() ?
+			__S("Do you want to leave\nthe match?\n\nYour opponent will win.") :
+			__S("Do you want to return\nto the main menu?\n\nYour game will be saved."/*"[LEAVE_GAME_HEADER]"*/), 
 		"", 
 		Dialog::BUTTONS_YES_NO
 	);
@@ -845,6 +860,15 @@ void LawnApp::FinishUserDialog(bool isYes)
 
 //0x450A10
 // GOTY @Patoke: 0x453DE0
+void LawnApp::DoVersusDialog()
+{
+	KillDialog(Dialogs::DIALOG_VERSUS);
+
+	VersusDialog* aDialog = new VersusDialog(this);
+	CenterDialog(aDialog, aDialog->mWidth, aDialog->mHeight);
+	AddDialog(Dialogs::DIALOG_VERSUS, aDialog);
+}
+
 void LawnApp::DoCreateUserDialog()
 {
 	KillDialog(Dialogs::DIALOG_CREATEUSER);
@@ -1159,6 +1183,9 @@ bool LawnApp::KillAlmanacDialog()
 //0x4516F0
 bool LawnApp::NeedPauseGame()
 {
+	if (IsVersusMode())  // the opponent's game keeps going
+		return false;
+
 	if (mDialogList.size() == 0)
 		return false;
 
@@ -1683,6 +1710,7 @@ void LawnApp::UpdateFrames()
 		SexyApp::UpdateFrames();
 
 		mMusic->MusicUpdate();
+		mVersus->Update();
 		if (mLoadingThreadCompleted && mEffectSystem)
 		{
 			mEffectSystem->ProcessDeleteQueue();
@@ -1960,7 +1988,22 @@ void LawnApp::ButtonDepress(int theId)
 		case Dialogs::DIALOG_CONFIRM_BACK_TO_MAIN:
 			KillDialog(Dialogs::DIALOG_CONFIRM_BACK_TO_MAIN);
 			mBoardResult = BoardResult::BOARDRESULT_QUIT;
-			mBoard->TryToSaveGame();
+			if (!IsVersusMode())  // a Versus match can't be resumed; leaving forfeits it
+				mBoard->TryToSaveGame();
+			DoBackToMain();
+			return;
+
+		case Dialogs::DIALOG_VERSUS:
+		{
+			VersusDialog* aVersusDialog = (VersusDialog*)GetDialog(Dialogs::DIALOG_VERSUS);
+			if (aVersusDialog)
+				mVersus->StartMatchmaking(aVersusDialog->GetRoomCode());
+			return;
+		}
+
+		case Dialogs::DIALOG_VERSUS_RESULT:
+			KillDialog(Dialogs::DIALOG_VERSUS_RESULT);
+			mVersus->Cancel();
 			DoBackToMain();
 			return;
 
@@ -2043,6 +2086,11 @@ void LawnApp::ButtonDepress(int theId)
 
 		case Dialogs::DIALOG_TIMESUP:
 			FinishTimesUpDialog();
+			return;
+
+		case Dialogs::DIALOG_VERSUS:
+			mVersus->Cancel();
+			KillDialog(Dialogs::DIALOG_VERSUS);
 			return;
 
 		case 10008:
@@ -2321,6 +2369,12 @@ int LawnApp::GetCurrentChallengeIndex()
 
 ChallengeDefinition& LawnApp::GetCurrentChallengeDef()
 {
+	if (IsVersusMode())  // not one of the original challenges, so it has no entry in gChallengeDefs
+	{
+		static ChallengeDefinition aVersusDef = { GameMode::GAMEMODE_MULTIPLAYER_VERSUS, 0, ChallengePage::CHALLENGE_PAGE_LIMBO, 0, 0, __S("Versus") };
+		return aVersusDef;
+	}
+
 	return GetChallengeDefinition(GetCurrentChallengeIndex());
 }
 
@@ -2387,6 +2441,9 @@ SeedType LawnApp::GetAwardSeedForLevel(int theLevel)
 //0x453AC0
 int LawnApp::GetSeedsAvailable()
 {
+	if (IsVersusMode())
+		return SeedType::NUM_SEEDS_IN_CHOOSER;
+
 	int aLevel = mPlayerInfo->GetLevel();
 	if (HasFinishedAdventure() || aLevel > 50)
 	{
@@ -2447,6 +2504,9 @@ bool LawnApp::HasSeedType(SeedType theSeedType)
 
 bool LawnApp::SeedTypeAvailable(SeedType theSeedType)
 {
+	if (IsVersusMode())  // both players get every plant, whatever their progress
+		return theSeedType >= 0 && theSeedType < SeedType::NUM_SEEDS_IN_CHOOSER;
+
 	return (theSeedType == SeedType::SEED_GATLINGPEA && mPlayerInfo->mPurchases[StoreItem::STORE_ITEM_PLANT_GATLINGPEA]) || HasSeedType(theSeedType);
 }
 

@@ -9,6 +9,7 @@
 #include "System/PoolEffect.h"
 #include "System/PopDRMComm.h"
 #include "System/TypingCheck.h"
+#include "System/Versus.h"
 #include "Widget/StoreScreen.h"
 #include "Widget/AwardScreen.h"
 #include "../Sexy.TodLib/Trail.h"
@@ -181,6 +182,12 @@ Board::Board(LawnApp* theApp)
 		mStoreButton->mDownImage = IMAGE_ZENSHOPBUTTON_HIGHLIGHT;
 		mStoreButton->mParentWidget = this;
 		mStoreButton->Resize(678, 33, IMAGE_ZENSHOPBUTTON->mWidth, 40);
+	}
+	else if (mApp->IsVersusMode())
+	{
+		// The top-right corner shows the opponent's lawn
+		mMenuButton->SetLabel(__S("[MENU_BUTTON]"));
+		mMenuButton->Resize(681, BOARD_HEIGHT - 42, 117, 46);
 	}
 	else
 	{
@@ -956,6 +963,7 @@ void Board::PickBackground()
 	case GameMode::GAMEMODE_CHALLENGE_ICE:
 	case GameMode::GAMEMODE_CHALLENGE_SHOVEL:
 	case GameMode::GAMEMODE_CHALLENGE_SQUIRREL:
+	case GameMode::GAMEMODE_MULTIPLAYER_VERSUS:
 		mBackground = BackgroundType::BACKGROUND_1_DAY;
 		break;
 
@@ -1432,6 +1440,10 @@ void Board::InitLevel()
 	else if (mApp->IsIZombieLevel())
 	{
 		mSunMoney = 150;
+	}
+	else if (mApp->IsVersusMode())
+	{
+		mSunMoney = VERSUS_STARTING_SUN;
 	}
 	else if (mApp->IsFirstTimeAdventureMode() && mLevel == 1)
 	{
@@ -3789,6 +3801,12 @@ void Board::MouseDownWithPlant(int x, int y, int theClickCount)
 		return;
 	}
 
+	if (mApp->IsVersusMode() && Challenge::IsZombieSeedType(GetSeedTypeInCursor()))
+	{
+		mChallenge->VersusMouseDownWithZombie(x, y, theClickCount);
+		return;
+	}
+
 	SeedType aPlantingSeedType = GetSeedTypeInCursor();
 	int aGridX = PlantingPixelToGridX(x, y, aPlantingSeedType);
 	int aGridY = PlantingPixelToGridY(x, y, aPlantingSeedType);
@@ -5275,6 +5293,10 @@ void Board::ZombiesWon(Zombie* theZombie)
 
 	ClearAdvice(AdviceType::ADVICE_NONE);
 	mApp->mBoardResult = BoardResult::BOARDRESULT_LOST;
+	if (mApp->IsVersusMode())
+	{
+		mApp->mVersus->OnZombiesWon();
+	}
 
 	Zombie* aZombie = nullptr;
 	while (IterateZombies(aZombie))
@@ -5413,6 +5435,7 @@ void Board::UpdateSunSpawning()
 		mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM || 
 		mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_LAST_STAND || 
 		mApp->IsIZombieLevel() ||
+		mApp->IsVersusMode() ||  // income replaces falling sun
 		mApp->IsScaryPotterLevel() || 
 		mApp->IsSquirrelLevel() || 
 		HasConveyorBeltSeedBank() || 
@@ -5462,7 +5485,8 @@ void Board::NextWaveComing()
 //0x413D00
 void Board::UpdateZombieSpawning()
 {
-	if (mApp->mGameMode == GameMode::GAMEMODE_UPSELL || mApp->mGameMode == GameMode::GAMEMODE_INTRO)
+	// In Versus the zombies come from the opponent
+	if (mApp->mGameMode == GameMode::GAMEMODE_UPSELL || mApp->mGameMode == GameMode::GAMEMODE_INTRO || mApp->IsVersusMode())
 		return;
 
 	if (mFinalWaveSoundCounter > 0)
@@ -7704,7 +7728,7 @@ void Board::DrawUITop(Graphics* g)
 		g->FillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
 	}
 
-	if (mApp->mGameScene == GameScenes::SCENE_PLAYING || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)
+	if ((mApp->mGameScene == GameScenes::SCENE_PLAYING || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM) && !mApp->IsVersusMode())
 	{
 		DrawProgressMeter(g);
 		DrawLevel(g);
@@ -7712,6 +7736,14 @@ void Board::DrawUITop(Graphics* g)
 	if (mStoreButton && mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_LAST_STAND)
 	{
 		mStoreButton->Draw(g);
+	}
+	if (mApp->IsVersusMode() && mApp->mVersus->mZombiePacketsAdded)
+	{
+		mApp->mVersus->DrawOpponentView(g);
+		if (mApp->mGameScene == GameScenes::SCENE_PLAYING)
+		{
+			mApp->mVersus->DrawIncome(g);
+		}
 	}
 
 	if ((mApp->mGameMode == GameMode::GAMEMODE_UPSELL || mApp->mGameMode == GameMode::GAMEMODE_INTRO) && mCutScene->mUpsellHideBoard)
@@ -8908,6 +8940,10 @@ bool Board::HasConveyorBeltSeedBank()
 //0x41BEE0
 int Board::GetNumSeedsInBank()
 {
+	if (mApp->IsVersusMode())
+	{
+		return mApp->mVersus->GetNumSeedsInBank();
+	}
 	if (mApp->IsScaryPotterLevel())
 	{
 		return 1;

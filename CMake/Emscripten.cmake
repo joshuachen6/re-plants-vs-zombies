@@ -64,6 +64,7 @@ function(pvz_configure_web_target target)
 
 		-sFORCE_FILESYSTEM=1
 		-lidbfs.js
+		-lwebsocket.js
 		-sENVIRONMENT=web
 		-sEXIT_RUNTIME=0
 		-sEXPORTED_RUNTIME_METHODS=FS,callMain

@@ -14,6 +14,7 @@ class CreditScreen;
 class TodFoley;
 class PoolEffect;
 class ZenGarden;
+class Versus;
 class PottedPlant;
 class EffectSystem;
 class TodParticleSystem;
@@ -82,6 +83,7 @@ public:
 	bool							mEasyPlantingCheat;								//+0x814
 	PoolEffect*						mPoolEffect;									//+0x818
 	ZenGarden*						mZenGarden;										//+0x81C
+	Versus*							mVersus;
 	EffectSystem*					mEffectSystem;									//+0x820
 	ReanimatorCache*				mReanimatorCache;								//+0x824
 	ProfileMgr*						mProfileMgr;									//+0x828
@@ -149,6 +151,7 @@ public:
 	void							DoUserDialog();
 	void							FinishUserDialog(bool isYes);
 	void							DoCreateUserDialog();
+	void							DoVersusDialog();
 	void							DoCheatDialog();
 	void							FinishCheatDialog(bool isYes);
 	void							FinishCreateUserDialog(bool isYes);
@@ -289,6 +292,7 @@ public:
 	static /*inline*/ bool			IsEndlessScaryPotter(GameMode theGameMode);
 	/*inline*/ bool					IsSquirrelLevel();
 	/*inline*/ bool					IsIZombieLevel();
+	bool							IsVersusMode() const { return mGameMode == GameMode::GAMEMODE_MULTIPLAYER_VERSUS; }
 	/*inline*/ bool					CanShowZenGarden();
 	static SexyString				GetMoneyString(int theAmount);
 	bool							AdvanceCrazyDaveText();

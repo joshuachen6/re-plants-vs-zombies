@@ -43,7 +43,8 @@ private:
         GameSelector_Zombatar = 111, // @Patoke: add stuff after 110
         GameSelector_AchievementsBack = 112,
         GameSelector_Achievements = 113,
-        GameSelector_QuickPlay = 114
+        GameSelector_QuickPlay = 114,
+        GameSelector_Versus = 115
     };
 
 public:
@@ -62,6 +63,7 @@ public:
     NewLawnButton*              mZombatarButton;             //+GOTY @Patoke: 0xC0
     NewLawnButton*              mAchievementsButton;        //+GOTY @Patoke: 0xC4
     NewLawnButton*              mQuickPlayButton;           //+GOTY @Patoke: 0xC8
+    LawnStoneButton*            mVersusButton;
     Widget*                     mOverlayWidget;             //+0xBC
     bool                        mStartingGame;              //+0xC0
     int                         mStartingGameCounter;       //+0xC4

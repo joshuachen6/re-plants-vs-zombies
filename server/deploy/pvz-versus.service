@@ -1,0 +1,14 @@
+# systemd unit for the Versus relay. Copy server/ to /opt/pvz-versus, then:
+#   cp pvz-versus.service /etc/systemd/system/ && systemctl enable --now pvz-versus
+[Unit]
+Description=PvZ Versus relay server
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node /opt/pvz-versus/relay.js --port 8787 --host 127.0.0.1
+Restart=always
+DynamicUser=yes
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

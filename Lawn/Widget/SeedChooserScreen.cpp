@@ -1,4 +1,5 @@
 #include "../Board.h"
+#include "../System/Versus.h"
 #include "../Zombie.h"
 #include "GameButton.h"
 #include "StoreScreen.h"
@@ -1127,6 +1128,10 @@ void SeedChooserScreen::CloseSeedChooser()
 			aSeedPacket.mRefreshing = true;
 			aSeedPacket.mActive = false;
 		}
+	}
+	if (mApp->IsVersusMode())
+	{
+		mApp->mVersus->OnSeedsChosen(mBoard);
 	}
 	mBoard->mCutScene->EndSeedChooser();
 }

@@ -11,6 +11,7 @@
 #include "../System/SaveGame.h"
 #include "../../GameConstants.h"
 #include "../System/PlayerInfo.h"
+#include "../System/VersusConnection.h"
 #include "../System/ProfileMgr.h"
 #include "../System/TypingCheck.h"
 #include "../../Sexy.TodLib/TodFoley.h"
@@ -20,6 +21,12 @@
 #include "../../Sexy.TodLib/TodParticle.h"
 #include "widget/Dialog.h"
 #include "widget/WidgetManager.h"
+
+// Under the Zombatar sign
+static const int VERSUS_BUTTON_X = 100;
+static const int VERSUS_BUTTON_Y = 312;
+static const int VERSUS_BUTTON_WIDTH = 163;
+static const int VERSUS_BUTTON_HEIGHT = 46;
 
 static float gFlowerCenter[3][2] = { { 765.0f, 483.0f }, { 663.0f, 455.0f }, { 701.0f, 439.0f } };  //0x665430
 
@@ -168,6 +175,11 @@ GameSelector::GameSelector(LawnApp* theApp)
 		Sexy::IMAGE_QUICKPLAY_BACK_BUTTON_HIGHLIGHT
 	);
 	mQuickPlayButton->Resize(mApp->mWidth - 150, 455, Sexy::IMAGE_QUICKPLAY_BACK_BUTTON->mWidth, Sexy::IMAGE_QUICKPLAY_BACK_BUTTON->mHeight);
+
+	mVersusButton = MakeButton(GameSelector::GameSelector_Versus, this, __S("Versus"));
+	mVersusButton->Resize(VERSUS_BUTTON_X, VERSUS_BUTTON_Y, VERSUS_BUTTON_WIDTH, VERSUS_BUTTON_HEIGHT);
+	mVersusButton->mBtnNoDraw = true;
+	mVersusButton->mMouseVisible = false;
 
 	mZenGardenButton = MakeNewButton(
 		GameSelector::GameSelector_ZenGarden, 
@@ -381,6 +393,8 @@ GameSelector::~GameSelector()
 		delete mAchievementsWidget;
 	if (mQuickPlayButton)
 		delete mQuickPlayButton;
+	if (mVersusButton)
+		delete mVersusButton;
 
 	delete mToolTip;
 }
@@ -399,6 +413,7 @@ void GameSelector::SyncButtons()
 	mStoreButton->mVisible = aStoreOpen;
 	mZombatarButton->mDisabled = false; // @Patoke: added these
 	mZombatarButton->mVisible = true;
+	mVersusButton->mVisible = VersusConnection::IsSupported();  // multiplayer needs the web build
 
 	Reanimation* aSelectorReanim = mApp->ReanimationGet(mSelectorReanimID);
 	if (aAlmanacAvailable)
@@ -804,6 +819,7 @@ void GameSelector::Update()
 		mZombatarButton->SetOffset(aNewX, aNewY);
 		mAchievementsButton->SetOffset(aNewX, aNewY);
 		mQuickPlayButton->SetOffset(aNewX, aNewY);
+		mVersusButton->Resize(VERSUS_BUTTON_X + aNewX, VERSUS_BUTTON_Y + aNewY, VERSUS_BUTTON_WIDTH, VERSUS_BUTTON_HEIGHT);
 
 		// @Patoke: make sure these are drawn even outside of bounds (force redraw)
 		mAchievementsButton->MarkDirty();
@@ -883,6 +899,7 @@ void GameSelector::Update()
 			mOptionsButton->mBtnNoDraw = false;
 			mQuitButton->mBtnNoDraw = false;
 			mZombatarButton->mBtnNoDraw = false; // @Patoke: new widgets
+			mVersusButton->mBtnNoDraw = false;
 			mAchievementsButton->mBtnNoDraw = false;
 			mAdventureButton->mMouseVisible = true;
 			mMinigameButton->mMouseVisible = true;
@@ -896,6 +913,7 @@ void GameSelector::Update()
 			mAlmanacButton->mMouseVisible = true;
 			mChangeUserButton->mMouseVisible = true;
 			mZombatarButton->mMouseVisible = true; // @Patoke: new widgets
+			mVersusButton->mMouseVisible = true;
 			mAchievementsButton->mMouseVisible = true;
 
 			if (mApp->mPlayerInfo == nullptr)
@@ -1029,6 +1047,7 @@ void GameSelector::AddedToManager(WidgetManager* theWidgetManager)
 	theWidgetManager->AddWidget(mChangeUserButton);
 	theWidgetManager->AddWidget(mOverlayWidget);
 	theWidgetManager->AddWidget(mZombatarButton); // @Patoke: add new widgets
+	theWidgetManager->AddWidget(mVersusButton);
 	//theWidgetManager->AddWidget(mZombatarWidget);
 	theWidgetManager->AddWidget(mAchievementsButton);
 	theWidgetManager->AddWidget(mAchievementsWidget);
@@ -1053,6 +1072,7 @@ void GameSelector::RemovedFromManager(WidgetManager* theWidgetManager)
 	theWidgetManager->RemoveWidget(mChangeUserButton);
 	theWidgetManager->RemoveWidget(mOverlayWidget);
 	theWidgetManager->RemoveWidget(mZombatarButton); // @Patoke: new widgets
+	theWidgetManager->RemoveWidget(mVersusButton);
 	//theWidgetManager->RemoveWidget(mZombatarWidget);
 	theWidgetManager->RemoveWidget(mAchievementsButton);
 	theWidgetManager->RemoveWidget(mAchievementsWidget);
@@ -1076,6 +1096,7 @@ void GameSelector::OrderInManagerChanged()
 	mWidgetManager->PutInfront(mSurvivalButton, this);
 	mWidgetManager->PutInfront(mChangeUserButton, this);
 	mWidgetManager->PutInfront(mZombatarButton, this); // @Patoke: z order for new widgets
+	mWidgetManager->PutInfront(mVersusButton, this);
 	mWidgetManager->PutInfront(mAchievementsButton, this);
 	//mWidgetManager->PutInfront(mQuickPlayButton, this);
 }
@@ -1276,6 +1297,7 @@ void GameSelector::ClickedAdventure()
 	mSurvivalButton->SetDisabled(true);
 	mZenGardenButton->SetDisabled(true);
 	mZombatarButton->SetDisabled(true); // @Patoke: added new widgets
+	mVersusButton->SetDisabled(true);
 	mAchievementsButton->SetDisabled(true);
 
 	Reanimation* aHandReanim = mApp->AddReanimation(-70.0f, 10.0f, 0, ReanimationType::REANIM_ZOMBIE_HAND);
@@ -1373,6 +1395,9 @@ void GameSelector::ButtonDepress(int theId)
 		//	GameSelector::ShowZombatarScreen();
 		//else
 		//	LawnApp::ShowZombatarTOS();
+		break;
+	case GameSelector::GameSelector_Versus:
+		mApp->DoVersusDialog();
 		break;
 	case GameSelector::GameSelector_AchievementsBack: // @Patoke: seems to be unused
 		//SlideTo(0, 0);

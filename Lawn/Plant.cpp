@@ -1,5 +1,6 @@
 #include "Coin.h"
 #include "Plant.h"
+#include "System/Versus.h"
 #include "Board.h"
 #include "Zombie.h"
 #include "Cutscene.h"
@@ -5139,7 +5140,8 @@ int Plant::GetRefreshTime(SeedType theSeedType, SeedType theImitaterType)
 {
     if (Challenge::IsZombieSeedType(theSeedType))
     {
-        return 0;
+        // Versus zombie packets have a cooldown so they can't be spammed
+        return gLawnApp->IsVersusMode() ? Versus::GetZombieRefreshTime(theSeedType) : 0;
     }
 
     if (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE)

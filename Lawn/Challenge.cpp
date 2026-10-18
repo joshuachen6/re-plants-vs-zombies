@@ -17,6 +17,7 @@
 #include "MessageWidget.h"
 #include "../GameConstants.h"
 #include "System/PlayerInfo.h"
+#include "System/Versus.h"
 #include "Widget/GameButton.h"
 #include "Widget/StoreScreen.h"
 #include "../Sexy.TodLib/TodDebug.h"
@@ -2463,6 +2464,12 @@ void Challenge::PlantAdded(Plant* thePlant)
 //0x425550
 PlantingReason Challenge::CanPlantAt(int theGridX, int theGridY, SeedType theSeedType)
 {
+	// Versus zombie packets are sent to the opponent, never placed on your own lawn
+	if (mApp->IsVersusMode() && IsZombieSeedType(theSeedType))
+	{
+		return PLANTING_NOT_HERE;
+	}
+
 	if (mApp->IsWallnutBowlingLevel())
 	{
 		return theGridX > 2 ? PLANTING_NOT_PASSED_LINE : PLANTING_OK;
@@ -4353,6 +4360,38 @@ void Challenge::IZombiePlaceZombie(ZombieType theZombieType, int theGridX, int t
 	{
 		aZombie->mPosX = mBoard->GridToPixelX(theGridX, theGridY) - 30.0f;
 	}
+}
+
+// Versus: with a zombie packet held, click a lane in the opponent view (or a row of your own lawn) to
+// send that zombie down the same lane of the opponent's lawn
+void Challenge::VersusMouseDownWithZombie(int theX, int theY, int theClickCount)
+{
+	SeedType aSeedType = mBoard->mCursorObject->mType;
+	int aRow = Versus::OpponentViewRowAt(theX, theY);
+	if (aRow < 0)
+	{
+		aRow = mBoard->PixelToGridY(theX, theY);
+	}
+
+	if (theClickCount < 0 || aRow < 0 || aRow >= 5)
+	{
+		mBoard->RefreshSeedPacketFromCursor();
+		mApp->PlayFoley(FOLEY_DROP);
+		return;
+	}
+
+	if (!mBoard->TakeSunMoney(mBoard->GetCurrentPlantCost(aSeedType, SEED_NONE)))
+	{
+		mBoard->RefreshSeedPacketFromCursor();
+		return;
+	}
+
+	mApp->mVersus->SendZombie(aSeedType, aRow);
+
+	TOD_ASSERT(mBoard->mCursorObject->mSeedBankIndex >= 0 && mBoard->mCursorObject->mSeedBankIndex < mBoard->mSeedBank->mNumPackets);
+	mBoard->mSeedBank->mSeedPackets[mBoard->mCursorObject->mSeedBankIndex].WasPlanted();
+	mApp->PlayFoley(FOLEY_PLANT);
+	mBoard->ClearCursor();
 }
 
 //0x42A210
