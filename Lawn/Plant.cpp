@@ -5159,15 +5159,17 @@ int Plant::GetRefreshTime(SeedType theSeedType, SeedType theImitaterType)
         return gLawnApp->IsVersusMode() ? Versus::GetZombieRefreshTime(theSeedType) : 0;
     }
 
+    // Versus halves cooldowns so the match is about what you buy and when
+    int aPercent = gLawnApp->IsVersusMode() ? VERSUS_PLANT_COOLDOWN_PERCENT : 100;
     if (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE)
     {
         const PlantDefinition& aPlantDef = GetPlantDefinition(theImitaterType);
-        return aPlantDef.mRefreshTime;
+        return aPlantDef.mRefreshTime * aPercent / 100;
     }
     else
     {
         const PlantDefinition& aPlantDef = GetPlantDefinition(theSeedType);
-        return aPlantDef.mRefreshTime;
+        return aPlantDef.mRefreshTime * aPercent / 100;
     }
 }
 

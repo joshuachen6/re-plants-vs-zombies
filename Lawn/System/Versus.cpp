@@ -47,22 +47,23 @@ const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS] = {
 	// Like the bloons you can send in Bloons TD Battles, tougher zombies unlock as the natural waves
 	// go by, so nobody can rush a Football Zombie before the other player has any defences. Nothing
 	// can be sent before the first natural wave, which gives both players time to set up.
-	//  zombie							cost	cooldown	unlock wave
-	{ SeedType::SEED_ZOMBIE_NORMAL,			100,	400,		1 },
-	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	175,	600,		2 },
-	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	175,	600,		3 },
-	{ SeedType::SEED_ZOMBIE_PAIL,			300,	900,		4 },
-	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	275,	900,		4 },
-	{ SeedType::SEED_ZOMBIE_LADDER,			300,	1000,		5 },
-	{ SeedType::SEED_ZOMBIE_BALLOON,		300,	1000,		5 },
-	{ SeedType::SEED_ZOMBIE_IMP,			75,		400,		1 },
-	{ SeedType::SEED_ZOMBIE_DIGGER,			300,	1200,		6 },
-	{ SeedType::SEED_ZOMBIE_BUNGEE,			250,	1200,		6 },
-	{ SeedType::SEED_ZOMBIE_POGO,			350,	1200,		7 },
-	{ SeedType::SEED_ZOMBIE_FOOTBALL,		450,	1800,		7 },
-	{ SeedType::SEED_ZOMBONI,				450,	1800,		8 },
-	{ SeedType::SEED_ZOMBIE_DANCER,			600,	2500,		9 },
-	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		750,	3500,		11 },
+	// The heaviest zombies cost you income instead of earning it, like MOAB-class sends.
+	//  zombie							cost	cooldown	unlock wave	income loss
+	{ SeedType::SEED_ZOMBIE_NORMAL,			100,	200,		1,			0 },
+	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	175,	300,		2,			0 },
+	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	175,	300,		3,			0 },
+	{ SeedType::SEED_ZOMBIE_PAIL,			300,	450,		4,			0 },
+	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	275,	450,		4,			0 },
+	{ SeedType::SEED_ZOMBIE_LADDER,			300,	500,		5,			0 },
+	{ SeedType::SEED_ZOMBIE_BALLOON,		300,	500,		5,			0 },
+	{ SeedType::SEED_ZOMBIE_IMP,			75,		200,		1,			0 },
+	{ SeedType::SEED_ZOMBIE_DIGGER,			300,	600,		6,			0 },
+	{ SeedType::SEED_ZOMBIE_BUNGEE,			250,	600,		6,			0 },
+	{ SeedType::SEED_ZOMBIE_POGO,			350,	600,		7,			0 },
+	{ SeedType::SEED_ZOMBIE_FOOTBALL,		450,	900,		7,			10 },
+	{ SeedType::SEED_ZOMBONI,				450,	900,		8,			10 },
+	{ SeedType::SEED_ZOMBIE_DANCER,			600,	1250,		9,			20 },
+	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		750,	1750,		11,			30 },
 };
 
 const VersusMapInfo gVersusMaps[NUM_VERSUS_MAPS] = {
@@ -624,9 +625,28 @@ void Versus::SpawnZombie(Board* theBoard, ZombieType theZombieType, int theRow)
 		return;
 
 	Zombie* aZombie = AddSpacedZombie(theBoard, theZombieType, aLane);
+	if (aZombie == nullptr)
+		return;
+
+	// Sends toughen up as the match goes on (both players are on the same wave)
+	int aToughness = GetToughnessPercent();
+	if (aToughness > 0)
+	{
+		auto aToughen = [aToughness](int& theHealth, int& theMaxHealth)
+		{
+			theHealth += theHealth * aToughness / 100;
+			theMaxHealth += theMaxHealth * aToughness / 100;
+		};
+		aToughen(aZombie->mBodyHealth, aZombie->mBodyMaxHealth);
+		aToughen(aZombie->mHelmHealth, aZombie->mHelmMaxHealth);
+		aToughen(aZombie->mShieldHealth, aZombie->mShieldMaxHealth);
+		aToughen(aZombie->mFlyingHealth, aZombie->mFlyingMaxHealth);
+	}
+
+	ZombieType aBountyType = theZombieType == ZombieType::ZOMBIE_REDEYE_GARGANTUAR ? ZombieType::ZOMBIE_GARGANTUAR : theZombieType;
 	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
 	{
-		if (aZombie && theZombieType != ZombieType::ZOMBIE_BUNGEE && Challenge::IZombieSeedTypeToZombieType(anOffer.mSeedType) == theZombieType)
+		if (theZombieType != ZombieType::ZOMBIE_BUNGEE && Challenge::IZombieSeedTypeToZombieType(anOffer.mSeedType) == aBountyType)
 			AddBounty(aZombie, anOffer.mCost / VERSUS_BOUNTY_DIVISOR);
 	}
 }
@@ -779,6 +799,8 @@ void Versus::HandleGameData(const std::string& theData)
 void Versus::SendZombie(SeedType theSeedType, int theRow)
 {
 	ZombieType aZombieType = Challenge::IZombieSeedTypeToZombieType(theSeedType);
+	if (aZombieType == ZombieType::ZOMBIE_GARGANTUAR && mWaveNumber >= VERSUS_GIGA_FROM_WAVE)
+		aZombieType = ZombieType::ZOMBIE_REDEYE_GARGANTUAR;
 	int aPackSize = GetPackSize();
 	for (int i = 0; i < aPackSize; i++)
 	{
@@ -790,7 +812,7 @@ void Versus::SendZombie(SeedType theSeedType, int theRow)
 		SendReliable(aWriter.mData);
 	}
 
-	mIncome += GetIncomeGain(GetSendCost(theSeedType));
+	mIncome += GetIncomeChange(theSeedType);
 	TodTrace("Versus: sent %d x zombie %d to row %d, income now %d", aPackSize, aZombieType, theRow, mIncome);
 }
 
@@ -1169,6 +1191,21 @@ int Versus::GetPackSize() const
 	return aSize;
 }
 
+int Versus::GetIncomeChange(SeedType theSeedType) const
+{
+	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
+	{
+		if (anOffer.mSeedType == theSeedType && anOffer.mIncomeLoss > 0)
+			return -std::min(anOffer.mIncomeLoss * GetPackSize(), std::max(mIncome - VERSUS_STARTING_INCOME, 0));
+	}
+	return GetIncomeGain(GetSendCost(theSeedType));
+}
+
+int Versus::GetToughnessPercent() const
+{
+	return std::clamp((mWaveNumber - VERSUS_TOUGHEN_FROM_WAVE + 1) * VERSUS_TOUGHEN_PERCENT_PER_WAVE, 0, VERSUS_TOUGHEN_MAX_PERCENT);
+}
+
 // Each send raises income by up to cost / VERSUS_INCOME_PER_SEND_DIVISOR, less the closer income is
 // to VERSUS_MAX_INCOME
 int Versus::GetIncomeGain(int theCost) const
@@ -1360,8 +1397,13 @@ void Versus::DrawWaveInfo(Graphics* g)
 		StrFormat(__S("Wave %d - next %ds"), mWaveNumber, aSecondsToNext);
 	Rect aRect = GetOpponentViewRect();
 	DrawCaption(g, aText, aRect.mY + aRect.mHeight + 28, Color(255, 255, 160));
+	SexyString aSends;
 	if (GetPackSize() > 1)
-		DrawCaption(g, StrFormat(__S("Sends: packs of %d"), GetPackSize()), aRect.mY + aRect.mHeight + 44, Color(255, 230, 90));
+		aSends = StrFormat(__S("Sends x%d"), GetPackSize());
+	if (GetToughnessPercent() > 0)
+		aSends += StrFormat(aSends.empty() ? __S("Sends +%d%% health") : __S(", +%d%% health"), GetToughnessPercent());
+	if (!aSends.empty())
+		DrawCaption(g, aSends, aRect.mY + aRect.mHeight + 44, Color(255, 230, 90));
 }
 
 void Versus::DrawIncome(Graphics* g)

@@ -31,8 +31,8 @@ constexpr int VERSUS_NUM_ZOMBIE_OFFERS = 15;
 constexpr int VERSUS_STARTING_SUN = 250;			// a sunflower, a peashooter and a little spare
 constexpr int VERSUS_STARTING_INCOME = 25;			// sun paid out every VERSUS_INCOME_INTERVAL
 constexpr int VERSUS_INCOME_INTERVAL = 600;			// updates (100 per second)
-constexpr int VERSUS_MAX_INCOME = 250;				// income tapers off towards this, so late-game sun doesn't run away
-constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 8;	// sending a zombie raises income by up to cost / this, which pays back
+constexpr int VERSUS_MAX_INCOME = 500;				// income tapers off towards this, so late-game sun doesn't run away
+constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 5;	// sending a zombie raises income by up to cost / this, which pays back
 													// about as fast as a sunflower (50 sun for 25 every ~24 s)
 constexpr int VERSUS_SNAPSHOT_INTERVAL = 10;		// updates between board snapshots
 
@@ -122,7 +122,21 @@ struct VersusZombieOffer
 	int						mCost;					// sun, replacing the I, Zombie puzzle prices
 	int						mRefreshTime;			// cooldown in updates, like Plant::GetRefreshTime
 	int						mUnlockWave;			// can only be sent once this many natural waves have come
+	int						mIncomeLoss;			// if set, sending lowers income by this instead of raising it,
+													// like MOAB-class sends in Bloons TD Battles
 };
+
+// Cooldowns of plants (and the zombie table's) are this fraction of the normal game's, so the match is
+// about what you buy and when rather than waiting on recharges
+constexpr int VERSUS_PLANT_COOLDOWN_PERCENT = 50;
+
+// Sends get more dangerous as the match goes on: from VERSUS_TOUGHEN_FROM_WAVE every sent zombie has
+// VERSUS_TOUGHEN_PERCENT_PER_WAVE more health per wave (up to double), and from
+// VERSUS_GIGA_FROM_WAVE a sent Gargantuar arrives as a Giga-Gargantuar
+constexpr int VERSUS_TOUGHEN_FROM_WAVE = 10;
+constexpr int VERSUS_TOUGHEN_PERCENT_PER_WAVE = 8;
+constexpr int VERSUS_TOUGHEN_MAX_PERCENT = 100;
+constexpr int VERSUS_GIGA_FROM_WAVE = 14;
 
 extern const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS];
 
@@ -247,6 +261,8 @@ public:
 	int						GetPackSize() const;
 	int						GetSendCost(SeedType theSeedType) const { return GetZombieCost(theSeedType) * GetPackSize(); }
 	int						GetIncomeGain(int theCost) const;
+	int						GetIncomeChange(SeedType theSeedType) const;	// what sending one pack does to income
+	int						GetToughnessPercent() const;	// extra health of sent zombies
 	static int				GetZombieUnlockWave(SeedType theSeedType);
 	static int				GetUnlockWave(SeedType theSeedType);	// plants or zombies; 0 if always available
 	bool					IsZombieUnlocked(SeedType theSeedType) const { return mWaveNumber >= GetZombieUnlockWave(theSeedType); }
