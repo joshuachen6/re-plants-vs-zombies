@@ -25,10 +25,11 @@ namespace Sexy
 constexpr int VERSUS_NUM_PLANT_PACKETS = 6;
 constexpr int VERSUS_NUM_ZOMBIE_PACKETS = 4;			// picked from gVersusZombieOffers before the match
 constexpr int VERSUS_NUM_ZOMBIE_OFFERS = 15;
-constexpr int VERSUS_STARTING_SUN = 150;
+constexpr int VERSUS_STARTING_SUN = 250;			// a sunflower, a peashooter and a little spare
 constexpr int VERSUS_STARTING_INCOME = 25;			// sun paid out every VERSUS_INCOME_INTERVAL
 constexpr int VERSUS_INCOME_INTERVAL = 600;			// updates (100 per second)
-constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 15;	// sending a zombie raises income by cost / this
+constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 8;	// sending a zombie raises income by cost / this, which pays back
+													// about as fast as a sunflower (50 sun for 25 every ~24 s)
 constexpr int VERSUS_SNAPSHOT_INTERVAL = 10;		// updates between board snapshots
 
 // Natural waves: both lawns get the same zombies at the same time, generated from the seed the
@@ -47,11 +48,32 @@ constexpr int VERSUS_RECONNECT_INTERVAL_MS = 2000;
 constexpr int VERSUS_CONNECT_TIMEOUT_MS = 5000;
 constexpr int VERSUS_RECONNECT_GIVE_UP_MS = 55000;
 
+// Maps the room's creator can pick. The order is part of the relay protocol and matches the
+// survival thumbnails (IMAGE_SURVIVAL_THUMBNAILS).
+enum VersusMap
+{
+	VERSUS_MAP_DAY,
+	VERSUS_MAP_NIGHT,
+	VERSUS_MAP_POOL,
+	VERSUS_MAP_FOG,
+	VERSUS_MAP_ROOF,
+	NUM_VERSUS_MAPS
+};
+
+struct VersusMapInfo
+{
+	const char*				mName;
+	BackgroundType			mBackground;
+};
+
+extern const VersusMapInfo gVersusMaps[NUM_VERSUS_MAPS];
+
 struct VersusZombieOffer
 {
 	SeedType				mSeedType;
 	int						mCost;					// sun, replacing the I, Zombie puzzle prices
 	int						mRefreshTime;			// cooldown in updates, like Plant::GetRefreshTime
+	int						mUnlockWave;			// can only be sent once this many natural waves have come
 };
 
 extern const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS];
@@ -109,7 +131,8 @@ public:
 	std::string				mJoinCode;				// empty when creating a room
 	std::string				mRoomCode;
 	std::string				mToken;					// lets us rejoin the room after a dropped connection
-	uint32_t				mSeed;					// shared by both players, for the natural waves
+	uint32_t				mSeed;					// shared by both players, for the natural waves and gravestones
+	VersusMap				mMap;					// picked by the room's creator
 	int						mPlayTime;				// updates since the match started
 	int						mWaveNumber;			// natural waves spawned so far
 	bool					mOpponentReady;
@@ -149,7 +172,7 @@ public:
 public:
 	Versus(LawnApp* theApp);
 
-	void					StartMatchmaking(const std::string& theJoinCode);
+	void					StartMatchmaking(const std::string& theJoinCode, VersusMap theMap);
 	void					Cancel();				// leave the room and close the connection
 	void					Update();
 	bool					IsMatchmaking() const { return mState == VERSUS_STATE_CONNECTING || mState == VERSUS_STATE_IN_LOBBY; }
@@ -167,6 +190,11 @@ public:
 	void					ShowResult();
 	static int				GetZombieRefreshTime(SeedType theSeedType);
 	static int				GetZombieCost(SeedType theSeedType);
+	static int				GetZombieUnlockWave(SeedType theSeedType);
+	bool					IsZombieUnlocked(SeedType theSeedType) const { return mWaveNumber >= GetZombieUnlockWave(theSeedType); }
+	void					DrawLockedZombiePackets(Sexy::Graphics* g);
+	bool					IsZombieAllowedOnMap(ZombieType theZombieType) const;
+	static int				PickLane(Board* theBoard, ZombieType theZombieType, int theRow);
 
 	// Opponent view, drawn in the top bar
 	static Sexy::Rect		GetOpponentViewRect();

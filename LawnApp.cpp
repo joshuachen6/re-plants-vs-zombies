@@ -1998,7 +1998,7 @@ void LawnApp::ButtonDepress(int theId)
 		{
 			VersusDialog* aVersusDialog = (VersusDialog*)GetDialog(Dialogs::DIALOG_VERSUS);
 			if (aVersusDialog)
-				mVersus->StartMatchmaking(aVersusDialog->GetRoomCode());
+				mVersus->StartMatchmaking(aVersusDialog->GetRoomCode(), aVersusDialog->mMap);
 			return;
 		}
 

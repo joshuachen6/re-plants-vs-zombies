@@ -6,11 +6,11 @@
 // untouched to the other player in the room.
 //
 //   client -> server                          server -> client
-//     {"t":"create"}                             {"t":"created","code":"ABCD","token":"..."}
-//     {"t":"join","code":"ABCD"}                 {"t":"joined","code":"ABCD","token":"..."}
+//     {"t":"create","map":2}                     {"t":"created","code":"ABCD","token":"..."}
+//     {"t":"join","code":"ABCD"}                 {"t":"joined","code":"ABCD","token":"...","map":2}
 //     {"t":"rejoin","code":"ABCD","token":"..."} {"t":"rejoined","code":"ABCD","go":true,"opponentConnected":true,"opponentReady":true}
 //     {"t":"ready"}                              {"t":"opponent_joined"}
-//     {"t":"leave"}                              {"t":"start","seed":123}
+//     {"t":"leave"}                              {"t":"start","seed":123,"map":2}
 //     {"t":"ping"}                               {"t":"pong"}
 //                                                {"t":"opponent_ready"}
 //                                                {"t":"go"}
@@ -21,6 +21,9 @@
 //
 // A player whose connection drops mid-match keeps their spot for RECONNECT_GRACE_MS. Game data sent
 // to them meanwhile is queued and delivered when they rejoin with the token they were given.
+//
+// The room's creator picks the map (0 day, 1 night, 2 pool, 3 fog, 4 roof); the server only passes
+// it on.
 //
 // Usage: node relay.js [--port 8787] [--host 127.0.0.1] [--static ../build-web]
 
@@ -42,6 +45,7 @@ const RECONNECT_GRACE_MS = 60000;
 // connection even if TCP hasn't noticed, so its opponent is told (and paused) straight away
 const MATCH_SILENCE_MS = 6000;
 const MAX_QUEUED_FRAMES = 2000;
+const NUM_MAPS = 5;
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, they read like 1 and 0
 
 const MIME_TYPES = {
@@ -95,7 +99,7 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 
 	// code -> room. A room has up to two player slots; a slot outlives its socket so a player who
 	// drops out can come back with their token.
-	//   room = { code, slots: [slot, slot?], ready: Set<slot>, started, seed }
+	//   room = { code, slots: [slot, slot?], ready: Set<slot>, started, seed, map }
 	//   slot = { token, ws (null while disconnected), queue: [binary frames for it], graceTimer }
 	const rooms = new Map();
 
@@ -172,9 +176,10 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 				leaveCurrentRoom(ws);
 				const code = newCode();
 				const slot = newSlot(ws);
-				rooms.set(code, { code, slots: [slot], ready: new Set(), started: false, seed: 0 });
+				const map = Number.isInteger(msg.map) && msg.map >= 0 && msg.map < NUM_MAPS ? msg.map : 0;
+				rooms.set(code, { code, slots: [slot], ready: new Set(), started: false, seed: 0, map });
 				ws.room = code;
-				log(`client ${ws.id} created room ${code}`);
+				log(`client ${ws.id} created room ${code} (map ${map})`);
 				send(ws, { t: 'created', code, token: slot.token });
 				break;
 			}
@@ -192,9 +197,9 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 				target.seed = Math.floor(Math.random() * 0x7fffffff);
 				ws.room = code;
 				log(`client ${ws.id} joined room ${code}`);
-				send(ws, { t: 'joined', code, token: slot.token });
+				send(ws, { t: 'joined', code, token: slot.token, map: target.map });
 				sendToSlot(target.slots[0], { t: 'opponent_joined' });
-				for (const s of target.slots) sendToSlot(s, { t: 'start', seed: target.seed });
+				for (const s of target.slots) sendToSlot(s, { t: 'start', seed: target.seed, map: target.map });
 				break;
 			}
 

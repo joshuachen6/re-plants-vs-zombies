@@ -33,6 +33,7 @@ private:
 	int						OfferHitTest(int x, int y);
 	int						BankHitTest(int x, int y);
 	bool					IsChosen(SeedType theSeedType);
+	bool					IsAvailable(SeedType theSeedType);
 	void					SyncSeedBank();
 };
 

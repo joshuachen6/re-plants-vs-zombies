@@ -1482,8 +1482,10 @@ void CutScene::Update()
 		Versus* aVersus = mApp->mVersus;
 		if (!aVersus->CanStartLevel())
 		{
-			aCutsceneTimeStop = true;
+			// Nothing moves while we wait, and AnimateBoard must not run again at this time: its
+			// once-off events (like the gravestones appearing at night) would fire every update
 			aVersus->UpdateWaitingToStart(mBoard);
+			return;
 		}
 		else if (aVersus->mShowingWaitAdvice)
 		{

@@ -4373,7 +4373,7 @@ void Challenge::VersusMouseDownWithZombie(int theX, int theY, int theClickCount)
 		aRow = mBoard->PixelToGridY(theX, theY);
 	}
 
-	if (theClickCount < 0 || aRow < 0 || aRow >= 5)
+	if (theClickCount < 0 || aRow < 0 || aRow >= MAX_GRID_SIZE_Y || !mBoard->RowCanHaveZombies(aRow))
 	{
 		mBoard->RefreshSeedPacketFromCursor();
 		mApp->PlayFoley(FOLEY_DROP);

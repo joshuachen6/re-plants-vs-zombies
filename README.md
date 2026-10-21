@@ -45,12 +45,13 @@ emcmake cmake -G Ninja -B build-web -DCMAKE_BUILD_TYPE=Release -DPVZ_WEB_DATA_DI
 
 The web build adds a **Versus** button to the main menu: a head-to-head mode in the style of Bloons TD Battles. Each player defends their own lawn, and the only zombies are the ones your opponent sends you.
 
-- One player clicks Versus and leaves the code empty to make a room; the other enters the 4-letter room code.
-- Both pick 6 plants (every plant is available), then 4 zombies from the 15 that can be sent. The zombie chooser shows each zombie's cost, income bonus and cooldown, and whether your opponent is ready.
+- One player clicks Versus, picks a map (Day, Night, Pool, Fog or Roof) and leaves the code empty to make a room; the other enters the 4-letter room code.
+- Both pick 6 plants (every plant is available), then 4 zombies from the 15 that can be sent. The zombie chooser shows each zombie's cost, income bonus, cooldown and the wave it unlocks at, and whether your opponent is ready. On the roof, Diggers, Dancers and Zombonis can't be picked.
 - The match starts for both players at the same moment, once both have finished choosing.
 - Your zombie packets sit on the right of the seed bank. Pick one up and click a lane in the opponent view (top right), or a row of your own lawn, to send that zombie down the same lane of your opponent's lawn.
 - There is no falling sun. Instead you get income every 6 seconds, and every zombie you send raises your income, so sending zombies is also how you grow your economy. Sunflowers still work.
-- Sent zombies cost about what the plants to stop them cost (a Normal zombie is 100 sun, a Buckethead 300, a Gargantuar 750).
+- Sent zombies cost about what the plants to stop them cost (a Normal zombie is 100 sun, a Buckethead 300, a Gargantuar 750), and tougher ones unlock as the natural waves go by: nothing can be sent before wave 1, Football Zombies from wave 7, Gargantuars from wave 11. Each send raises your income by an eighth of its cost, which pays back about as fast as a sunflower.
+- A zombie sent down a lane it can't use (a Football Zombie into the pool) walks down the nearest lane it can.
 - Like the rounds in Bloons TD Battles, both lawns also get the same natural waves at the same time: the first 25 seconds in, then every 25 seconds, growing and adding tougher zombies as the match goes on. Every 5th wave is a huge wave.
 - The top-right view shows your opponent's lawn, sun and income, updated 10 times a second.
 - The first player whose lawn a zombie gets through loses. Lawnmowers work as usual. Leaving the match forfeits it.

@@ -21,6 +21,8 @@ ZombieChooserScreen::ZombieChooserScreen(LawnApp* theApp)
 {
 	mApp = theApp;
 	mMouseVisible = true;
+	mLoadedResourceNames.push_back("DelayLoad_ChallengeScreen");  // the lock drawn on zombies the map rules out
+	TodLoadResources("DelayLoad_ChallengeScreen");
 	Resize(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
 
 	mStartButton = new GameButton(0);
@@ -76,6 +78,11 @@ int ZombieChooserScreen::BankHitTest(int x, int y)
 	return -1;
 }
 
+bool ZombieChooserScreen::IsAvailable(SeedType theSeedType)
+{
+	return mApp->mVersus->IsZombieAllowedOnMap(Challenge::IZombieSeedTypeToZombieType(theSeedType));
+}
+
 bool ZombieChooserScreen::IsChosen(SeedType theSeedType)
 {
 	return std::find(mChosen.begin(), mChosen.end(), theSeedType) != mChosen.end();
@@ -124,7 +131,9 @@ void ZombieChooserScreen::Draw(Graphics* g)
 		int x, y;
 		GetOfferPosition(i, x, y);
 		SeedType aSeedType = gVersusZombieOffers[i].mSeedType;
-		DrawSeedPacket(g, x, y, aSeedType, SeedType::SEED_NONE, 0, IsChosen(aSeedType) ? 55 : 255, true, false);
+		DrawSeedPacket(g, x, y, aSeedType, SeedType::SEED_NONE, 0, IsChosen(aSeedType) || !IsAvailable(aSeedType) ? 55 : 255, true, false);
+		if (!IsAvailable(aSeedType))
+			g->DrawImage(Sexy::IMAGE_LOCK, x + (SEED_PACKET_WIDTH - Sexy::IMAGE_LOCK->mWidth) / 2, y + 12);
 	}
 
 	g->SetColor(Color(0, 0, 0, 160));
@@ -138,9 +147,13 @@ void ZombieChooserScreen::Draw(Graphics* g)
 		const VersusZombieOffer& aOffer = gVersusZombieOffers[anOffer];
 		ZombieType aZombieType = Challenge::IZombieSeedTypeToZombieType(aOffer.mSeedType);
 		int aCost = Plant::GetCost(aOffer.mSeedType, SeedType::SEED_NONE);
-		anInfo = StrFormat(__S("%s\n\nCosts %d sun\nRaises your income by %d\nCooldown %d seconds"),
-			TodStringTranslate(StrFormat(__S("[%s]"), GetZombieDefinition(aZombieType).mZombieName)).c_str(),
-			aCost, aCost / VERSUS_INCOME_PER_SEND_DIVISOR, aOffer.mRefreshTime / 100);
+		SexyString aName = TodStringTranslate(StrFormat(__S("[%s]"), GetZombieDefinition(aZombieType).mZombieName));
+		if (!IsAvailable(aOffer.mSeedType))
+			anInfo = StrFormat(__S("%s\n\nCan't be sent on the %s map."), aName.c_str(), gVersusMaps[mApp->mVersus->mMap].mName);
+		else
+			anInfo = StrFormat(__S("%s\n\nCosts %d sun\nRaises your income by %d\nCooldown %d seconds\n%s"),
+				aName.c_str(), aCost, aCost / VERSUS_INCOME_PER_SEND_DIVISOR, aOffer.mRefreshTime / 100,
+				aOffer.mUnlockWave == 0 ? __S("Available from the start") : StrFormat(__S("Available from wave %d"), aOffer.mUnlockWave).c_str());
 	}
 	else
 	{
@@ -171,7 +184,7 @@ void ZombieChooserScreen::MouseDown(int x, int y, int theClickCount)
 	if (anOffer >= 0)
 	{
 		SeedType aSeedType = gVersusZombieOffers[anOffer].mSeedType;
-		if (!IsChosen(aSeedType) && mChosen.size() < VERSUS_NUM_ZOMBIE_PACKETS)
+		if (!IsChosen(aSeedType) && IsAvailable(aSeedType) && mChosen.size() < VERSUS_NUM_ZOMBIE_PACKETS)
 		{
 			mChosen.push_back(aSeedType);
 			SyncSeedBank();

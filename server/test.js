@@ -40,7 +40,7 @@ async function main() {
 		sendJson(b, { t: 'join', code: 'ZZZZ' });
 		assert.deepStrictEqual(await next(b), { t: 'error', msg: 'No room with that code' });
 
-		sendJson(a, { t: 'create' });
+		sendJson(a, { t: 'create', map: 2 });
 		const created = await next(a);
 		assert.strictEqual(created.t, 'created');
 		assert.match(created.code, /^[A-Z]{4}$/);
@@ -50,12 +50,15 @@ async function main() {
 		const joined = await next(b);
 		assert.strictEqual(joined.t, 'joined');
 		assert.strictEqual(joined.code, created.code);
+		assert.strictEqual(joined.map, 2);
 		assert.notStrictEqual(joined.token, created.token);
 		assert.deepStrictEqual(await next(a), { t: 'opponent_joined' });
 		const startA = await next(a);
 		const startB = await next(b);
 		assert.strictEqual(startA.t, 'start');
 		assert.strictEqual(startA.seed, startB.seed);
+		assert.strictEqual(startA.map, 2);
+		assert.strictEqual(startB.map, 2);
 
 		const c = await connect(relay.port);
 		sendJson(c, { t: 'join', code: created.code });

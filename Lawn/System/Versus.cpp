@@ -44,22 +44,33 @@ enum VersusConnectionDialog
 // Every zombie that can be sent, in the order the zombie chooser shows them. Prices are roughly the
 // sun worth of plants it takes to stop each zombie, so sending isn't cheaper than defending.
 const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS] = {
-	//  zombie							cost	cooldown
-	{ SeedType::SEED_ZOMBIE_NORMAL,			100,	400 },
-	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	175,	600 },
-	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	175,	600 },
-	{ SeedType::SEED_ZOMBIE_PAIL,			300,	900 },
-	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	275,	900 },
-	{ SeedType::SEED_ZOMBIE_LADDER,			300,	1000 },
-	{ SeedType::SEED_ZOMBIE_BALLOON,		300,	1000 },
-	{ SeedType::SEED_ZOMBIE_IMP,			75,		400 },
-	{ SeedType::SEED_ZOMBIE_DIGGER,			300,	1200 },
-	{ SeedType::SEED_ZOMBIE_BUNGEE,			250,	1200 },
-	{ SeedType::SEED_ZOMBIE_POGO,			350,	1200 },
-	{ SeedType::SEED_ZOMBIE_FOOTBALL,		450,	1800 },
-	{ SeedType::SEED_ZOMBONI,				450,	1800 },
-	{ SeedType::SEED_ZOMBIE_DANCER,			600,	2500 },
-	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		750,	3500 },
+	// Like the bloons you can send in Bloons TD Battles, tougher zombies unlock as the natural waves
+	// go by, so nobody can rush a Football Zombie before the other player has any defences. Nothing
+	// can be sent before the first natural wave, which gives both players time to set up.
+	//  zombie							cost	cooldown	unlock wave
+	{ SeedType::SEED_ZOMBIE_NORMAL,			100,	400,		1 },
+	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	175,	600,		2 },
+	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	175,	600,		3 },
+	{ SeedType::SEED_ZOMBIE_PAIL,			300,	900,		4 },
+	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	275,	900,		4 },
+	{ SeedType::SEED_ZOMBIE_LADDER,			300,	1000,		5 },
+	{ SeedType::SEED_ZOMBIE_BALLOON,		300,	1000,		5 },
+	{ SeedType::SEED_ZOMBIE_IMP,			75,		400,		1 },
+	{ SeedType::SEED_ZOMBIE_DIGGER,			300,	1200,		6 },
+	{ SeedType::SEED_ZOMBIE_BUNGEE,			250,	1200,		6 },
+	{ SeedType::SEED_ZOMBIE_POGO,			350,	1200,		7 },
+	{ SeedType::SEED_ZOMBIE_FOOTBALL,		450,	1800,		7 },
+	{ SeedType::SEED_ZOMBONI,				450,	1800,		8 },
+	{ SeedType::SEED_ZOMBIE_DANCER,			600,	2500,		9 },
+	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		750,	3500,		11 },
+};
+
+const VersusMapInfo gVersusMaps[NUM_VERSUS_MAPS] = {
+	{ "Day",	BackgroundType::BACKGROUND_1_DAY },
+	{ "Night",	BackgroundType::BACKGROUND_2_NIGHT },
+	{ "Pool",	BackgroundType::BACKGROUND_3_POOL },
+	{ "Fog",	BackgroundType::BACKGROUND_4_FOG },
+	{ "Roof",	BackgroundType::BACKGROUND_5_ROOF },
 };
 
 // Zombies the natural waves pick from: point value, first wave it can appear in, and pick weight
@@ -125,7 +136,7 @@ enum VersusZombieFlags
 // The opponent view shows this part of the board (the lawn rows plus a little sky)
 static const int OPPONENT_VIEW_SRC_Y = 60;
 static const int OPPONENT_VIEW_SRC_WIDTH = BOARD_WIDTH;
-static const int OPPONENT_VIEW_SRC_HEIGHT = 520;
+static const int OPPONENT_VIEW_SRC_HEIGHT = 540;  // tall enough for the six lanes of the pool
 static const float OPPONENT_VIEW_SCALE = 0.19f;
 
 namespace
@@ -201,7 +212,7 @@ namespace
 	}
 }
 
-Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE), mSeed(0), mZombieChooser(nullptr),
+Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE), mSeed(0), mMap(VERSUS_MAP_DAY), mZombieChooser(nullptr),
 	mConnectionDialog(VERSUS_CONNECTION_DIALOG_NONE), mKeepRunningHidden(false)
 {
 	ResetMatch();
@@ -235,10 +246,12 @@ void Versus::ResetMatch()
 	mLastReceiveTime = mLastKeepaliveTime = SDL_GetTicks();
 }
 
-void Versus::StartMatchmaking(const std::string& theJoinCode)
+void Versus::StartMatchmaking(const std::string& theJoinCode, VersusMap theMap)
 {
 	if (mState != VERSUS_STATE_OFF)
 		return;
+
+	mMap = theMap;  // used when creating a room; joining takes the room's map
 
 	std::string aUrl = VersusConnection::GetServerUrl();
 	ResetMatch();
@@ -283,7 +296,7 @@ void Versus::Update()
 				break;
 			}
 			if (mJoinCode.empty())
-				mConnection.SendText("{\"t\":\"create\"}");
+				mConnection.SendText(StrFormat("{\"t\":\"create\",\"map\":%d}", (int)mMap));
 			else
 				mConnection.SendText("{\"t\":\"join\",\"code\":\"" + mJoinCode + "\"}");
 			mStatus = mJoinCode.empty() ? "Creating a room..." : "Joining room " + mJoinCode + "...";
@@ -358,15 +371,16 @@ void Versus::HandleControl(const std::string& theMessage)
 		mRoomCode = JsonField(theMessage, "code");
 		mToken = JsonField(theMessage, "token");
 		mState = VERSUS_STATE_IN_LOBBY;
-		mStatus = "Room code: " + mRoomCode + "\nWaiting for an opponent...";
+		mStatus = "Room code: " + mRoomCode + " (" + gVersusMaps[mMap].mName + ")\nWaiting for an opponent...";
 		TodTrace("Versus: created room %s", mRoomCode.c_str());
 	}
 	else if (aType == "joined")
 	{
 		mRoomCode = JsonField(theMessage, "code");
 		mToken = JsonField(theMessage, "token");
+		mMap = (VersusMap)std::clamp(atoi(JsonField(theMessage, "map").c_str()), 0, NUM_VERSUS_MAPS - 1);
 		mState = VERSUS_STATE_IN_LOBBY;
-		mStatus = "Joined room " + mRoomCode + ".";
+		mStatus = "Joined room " + mRoomCode + " (" + gVersusMaps[mMap].mName + ").";
 	}
 	else if (aType == "opponent_joined")
 	{
@@ -375,6 +389,7 @@ void Versus::HandleControl(const std::string& theMessage)
 	else if (aType == "start")
 	{
 		mSeed = (uint32_t)strtoul(JsonField(theMessage, "seed").c_str(), nullptr, 10);
+		mMap = (VersusMap)std::clamp(atoi(JsonField(theMessage, "map").c_str()), 0, NUM_VERSUS_MAPS - 1);
 		mState = VERSUS_STATE_CHOOSING_SEEDS;
 		mApp->KillDialog(Dialogs::DIALOG_VERSUS);
 		mApp->KillGameSelector();
@@ -557,10 +572,51 @@ void Versus::UpdateConnectionDialog()
 		mApp->mBoard->Pause(aWanted != VERSUS_CONNECTION_DIALOG_NONE);
 }
 
+// The lane a zombie of this type would use on this board: theRow if it can go there, otherwise the
+// closest lane it can (a Football Zombie sent down a pool lane walks on the nearest grass instead)
+int Versus::PickLane(Board* theBoard, ZombieType theZombieType, int theRow)
+{
+	auto aLaneAccepts = [theBoard, theZombieType](int theLane)
+	{
+		if (!theBoard->RowCanHaveZombies(theLane))
+			return false;
+		bool aPoolLane = theBoard->mPlantRow[theLane] == PlantRowType::PLANTROW_POOL;
+		if (aPoolLane && !Zombie::ZombieTypeCanGoInPool(theZombieType))
+			return false;
+		if (!aPoolLane && Board::IsZombieTypePoolOnly(theZombieType))
+			return false;
+		if (theBoard->mPlantRow[theLane] == PlantRowType::PLANTROW_HIGH_GROUND && !Zombie::ZombieTypeCanGoOnHighGround(theZombieType))
+			return false;
+		// Dancers summon backup dancers above and below them
+		if (theZombieType == ZombieType::ZOMBIE_DANCER && !theBoard->StageHasPool())
+			return theBoard->RowCanHaveZombies(theLane - 1) && theBoard->RowCanHaveZombies(theLane + 1);
+		return true;
+	};
+
+	for (int aDistance = 0; aDistance < MAX_GRID_SIZE_Y; aDistance++)
+	{
+		if (aLaneAccepts(theRow - aDistance))
+			return theRow - aDistance;
+		if (aLaneAccepts(theRow + aDistance))
+			return theRow + aDistance;
+	}
+	return -1;
+}
+
+bool Versus::IsZombieAllowedOnMap(ZombieType theZombieType) const
+{
+	// Nothing can dig through the roof, and dancers' backups rise out of the ground
+	if (mMap == VERSUS_MAP_ROOF)
+		return theZombieType != ZombieType::ZOMBIE_DIGGER && theZombieType != ZombieType::ZOMBIE_DANCER && theZombieType != ZombieType::ZOMBIE_ZAMBONI;
+	return true;
+}
+
 void Versus::SpawnZombie(Board* theBoard, ZombieType theZombieType, int theRow)
 {
-	TodTrace("Versus: received zombie %d in row %d", theZombieType, theRow);
-	theBoard->AddZombieInRow(theZombieType, theRow, 0);
+	int aLane = PickLane(theBoard, theZombieType, theRow);
+	TodTrace("Versus: received zombie %d for row %d, sent down row %d", theZombieType, theRow, aLane);
+	if (aLane >= 0)
+		theBoard->AddZombieInRow(theZombieType, aLane, 0);
 }
 
 void Versus::HandleGameData(const std::string& theData)
@@ -581,7 +637,7 @@ void Versus::HandleGameData(const std::string& theData)
 		mLastReceivedSeq = aSeq;
 		ZombieType aZombieType = (ZombieType)aReader.U8();
 		int aRow = aReader.U8();
-		if (!aReader.mOk || aZombieType < 0 || aZombieType >= ZombieType::NUM_ZOMBIE_TYPES || aRow < 0 || aRow >= 5)
+		if (!aReader.mOk || aZombieType < 0 || aZombieType >= ZombieType::NUM_ZOMBIE_TYPES || aRow < 0 || aRow >= MAX_GRID_SIZE_Y)
 			break;
 
 		// Hold on to zombies that arrive before our level has started, or while we're paused
@@ -921,9 +977,12 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 	int aPoints = NaturalWavePoints(theWave) * (aHuge ? 2 : 1);
 	int aCount = 0;
 
+	int aNumLanes = theBoard->StageHas6Rows() ? 6 : 5;
 	if (aHuge)
 	{
-		theBoard->AddZombieInRow(ZombieType::ZOMBIE_FLAG, aRandom.Range(5), 0);
+		int aLane = PickLane(theBoard, ZombieType::ZOMBIE_FLAG, aRandom.Range(aNumLanes));
+		if (aLane >= 0)
+			theBoard->AddZombieInRow(ZombieType::ZOMBIE_FLAG, aLane, 0);
 		aCount++;
 	}
 
@@ -931,7 +990,7 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 	{
 		int aTotalWeight = 0;
 		for (const VersusNaturalZombie& aZombie : gVersusNaturalZombies)
-			if (theWave >= aZombie.mFirstWave && aZombie.mValue <= aPoints)
+			if (theWave >= aZombie.mFirstWave && aZombie.mValue <= aPoints && IsZombieAllowedOnMap(aZombie.mZombieType))
 				aTotalWeight += aZombie.mWeight;
 		if (aTotalWeight == 0)
 			break;
@@ -939,11 +998,13 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 		int aPick = aRandom.Range(aTotalWeight);
 		for (const VersusNaturalZombie& aZombie : gVersusNaturalZombies)
 		{
-			if (theWave < aZombie.mFirstWave || aZombie.mValue > aPoints)
+			if (theWave < aZombie.mFirstWave || aZombie.mValue > aPoints || !IsZombieAllowedOnMap(aZombie.mZombieType))
 				continue;
 			if (aPick < aZombie.mWeight)
 			{
-				theBoard->AddZombieInRow(aZombie.mZombieType, aRandom.Range(5), 0);
+				int aLane = PickLane(theBoard, aZombie.mZombieType, aRandom.Range(aNumLanes));
+				if (aLane >= 0)
+					theBoard->AddZombieInRow(aZombie.mZombieType, aLane, 0);
 				aPoints -= aZombie.mValue;
 				aCount++;
 				break;
@@ -953,6 +1014,38 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 	}
 
 	TodTrace("Versus: natural wave %d, %d zombies", theWave, aCount);
+}
+
+int Versus::GetZombieUnlockWave(SeedType theSeedType)
+{
+	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
+	{
+		if (anOffer.mSeedType == theSeedType)
+			return anOffer.mUnlockWave;
+	}
+	return 0;
+}
+
+// Darkens zombie packets that haven't unlocked yet and says which wave unlocks them
+void Versus::DrawLockedZombiePackets(Graphics* g)
+{
+	Board* aBoard = mApp->mBoard;
+	if (aBoard == nullptr || !mZombiesChosen)
+		return;
+
+	SeedBank* aSeedBank = aBoard->mSeedBank;
+	for (int i = VERSUS_NUM_PLANT_PACKETS; i < aSeedBank->mNumPackets; i++)
+	{
+		SeedPacket& aPacket = aSeedBank->mSeedPackets[i];
+		if (aPacket.mPacketType == SeedType::SEED_NONE || IsZombieUnlocked(aPacket.mPacketType))
+			continue;
+
+		int aX = aSeedBank->mX + aPacket.mX, aY = aSeedBank->mY + aPacket.mY;
+		g->SetColor(Color(0, 0, 0, 150));
+		g->FillRect(aX, aY, SEED_PACKET_WIDTH, SEED_PACKET_HEIGHT);
+		TodDrawString(g, StrFormat(__S("Wave %d"), GetZombieUnlockWave(aPacket.mPacketType)), aX + SEED_PACKET_WIDTH / 2, aY + 40,
+			FONT_BRIANNETOD12, Color(255, 220, 120), DrawStringJustification::DS_ALIGN_CENTER);
+	}
 }
 
 int Versus::GetZombieCost(SeedType theSeedType)
@@ -988,9 +1081,14 @@ int Versus::OpponentViewRowAt(int theX, int theY)
 	if (!aRect.Contains(theX, theY))
 		return -1;
 
-	float aBoardY = OPPONENT_VIEW_SRC_Y + (theY - aRect.mY) / OPPONENT_VIEW_SCALE;
-	int aRow = (int)((aBoardY - LAWN_YMIN) / 100.0f);
-	return std::clamp(aRow, 0, 4);
+	// Both lawns are the same map, so our own board's lane layout (rows, pool, roof slope) applies
+	Board* aBoard = gLawnApp->mBoard;
+	if (aBoard == nullptr)
+		return -1;
+	int aBoardX = (int)((theX - aRect.mX) / OPPONENT_VIEW_SCALE);
+	int aBoardY = (int)(OPPONENT_VIEW_SRC_Y + (theY - aRect.mY) / OPPONENT_VIEW_SCALE);
+	int aRow = aBoard->PixelToGridY(aBoardX, aBoardY);
+	return aRow >= 0 && aBoard->RowCanHaveZombies(aRow) ? aRow : -1;
 }
 
 void Versus::DrawOpponentView(Graphics* g)
@@ -1002,16 +1100,32 @@ void Versus::DrawOpponentView(Graphics* g)
 
 	Graphics aView(*g);
 	aView.ClipRect(aRect);
-	aView.DrawImage(IMAGE_BACKGROUND1, aRect, Rect(BOARD_OFFSET, OPPONENT_VIEW_SRC_Y, OPPONENT_VIEW_SRC_WIDTH, OPPONENT_VIEW_SRC_HEIGHT));
+	Board* aBoard = mApp->mBoard;
+	Image* aBackgrounds[NUM_VERSUS_MAPS] = { IMAGE_BACKGROUND1, IMAGE_BACKGROUND2, IMAGE_BACKGROUND3, IMAGE_BACKGROUND4, IMAGE_BACKGROUND5 };
+	if (aBackgrounds[mMap])
+		aView.DrawImage(aBackgrounds[mMap], aRect, Rect(BOARD_OFFSET, OPPONENT_VIEW_SRC_Y, OPPONENT_VIEW_SRC_WIDTH, OPPONENT_VIEW_SRC_HEIGHT));
+
+	// The background image leaves the pool blank (the board draws the water on top), so paint it in
+	for (int aRow = 0; aBoard && aBoard->StageHasPool() && aRow < MAX_GRID_SIZE_Y; aRow++)
+	{
+		if (aBoard->mPlantRow[aRow] != PlantRowType::PLANTROW_POOL)
+			continue;
+		int aTop = (int)OpponentViewY(aBoard->GridToPixelY(0, aRow));
+		int aBottom = (int)OpponentViewY(aBoard->GridToPixelY(0, aRow) + 85);
+		aView.SetColor(mMap == VERSUS_MAP_FOG ? Color(28, 58, 92) : Color(60, 150, 215));
+		aView.FillRect((int)OpponentViewX(LAWN_XMIN - 5), aTop, (int)(735 * OPPONENT_VIEW_SCALE), aBottom - aTop);
+	}
 
 	aView.mScaleX = OPPONENT_VIEW_SCALE;
 	aView.mScaleY = OPPONENT_VIEW_SCALE;
-	for (int aRow = 0; aRow < 5; aRow++)
+	for (int aRow = 0; aBoard && aRow < MAX_GRID_SIZE_Y; aRow++)
 	{
 		if (mOpponentMowers & (1 << aRow))
 		{
+			LawnMowerType aMowerType = aBoard->StageHasRoof() ? LawnMowerType::LAWNMOWER_ROOF :
+				aBoard->mPlantRow[aRow] == PlantRowType::PLANTROW_POOL ? LawnMowerType::LAWNMOWER_POOL : LawnMowerType::LAWNMOWER_LAWN;
 			// DrawCachedMower shifts left by 20 unscaled pixels
-			mApp->mReanimatorCache->DrawCachedMower(&aView, OpponentViewX(0) + 20, OpponentViewY(LAWN_YMIN + aRow * 100 + 23), LawnMowerType::LAWNMOWER_LAWN);
+			mApp->mReanimatorCache->DrawCachedMower(&aView, OpponentViewX(0) + 20, OpponentViewY(aBoard->GridToPixelY(0, aRow) + 23), aMowerType);
 		}
 	}
 	for (const VersusRemotePlant& aPlant : mOpponentPlants)
@@ -1035,14 +1149,14 @@ void Versus::DrawOpponentView(Graphics* g)
 	}
 
 	// Highlight the lane a held zombie packet would go to
-	Board* aBoard = mApp->mBoard;
 	if (aBoard && Challenge::IsZombieSeedType(aBoard->GetSeedTypeInCursor()))
 	{
 		int aRow = OpponentViewRowAt(mApp->mWidgetManager->mLastMouseX, mApp->mWidgetManager->mLastMouseY);
 		if (aRow >= 0)
 		{
+			int aRowHeight = aBoard->StageHas6Rows() ? 85 : 100;
 			g->SetColor(Color(255, 255, 255, 70));
-			g->FillRect(aRect.mX, (int)OpponentViewY(LAWN_YMIN + aRow * 100), aRect.mWidth, (int)(100 * OPPONENT_VIEW_SCALE));
+			g->FillRect(aRect.mX, (int)OpponentViewY(aBoard->GridToPixelY(8, aRow)), aRect.mWidth, (int)(aRowHeight * OPPONENT_VIEW_SCALE));
 		}
 	}
 

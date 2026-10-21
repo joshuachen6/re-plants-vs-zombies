@@ -4,6 +4,7 @@
 #include "SeedPacket.h"
 #include "../LawnApp.h"
 #include "CursorObject.h"
+#include "System/Versus.h"
 #include "../Resources.h"
 #include "MessageWidget.h"
 #include "graphics/Font.h"
@@ -678,6 +679,12 @@ bool SeedPacket::CanPickUp()
 		return false;
 	}
 
+	// Versus zombies unlock as the natural waves go by
+	if (mApp->IsVersusMode() && Challenge::IsZombieSeedType(mPacketType) && !mApp->mVersus->IsZombieUnlocked(mPacketType))
+	{
+		return false;
+	}
+
 	if (!mApp->mEasyPlantingCheat)
 	{
 		if (!mActive)
@@ -724,6 +731,13 @@ void SeedPacket::MouseDown(int x, int y, int theClickCount)
 	if (mPacketType == SeedType::SEED_IMITATER && mImitaterType != SeedType::SEED_NONE)
 	{
 		aUseSeedType = mImitaterType;
+	}
+
+	// Versus zombies unlock as the natural waves go by
+	if (mApp->IsVersusMode() && Challenge::IsZombieSeedType(mPacketType) && !mApp->mVersus->IsZombieUnlocked(mPacketType))
+	{
+		mApp->PlaySample(SOUND_BUZZER);
+		return;
 	}
 
 	if (!mApp->mEasyPlantingCheat)

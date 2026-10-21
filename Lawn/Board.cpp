@@ -834,6 +834,10 @@ void Board::PickZombieWaves()
 //0x40A110
 int Board::GetLevelRandSeed()
 {
+	// Both Versus players need the same layout (gravestones on the night map)
+	if (mApp->IsVersusMode())
+		return (int)mApp->mVersus->mSeed;
+
 	int aRndSeed = mApp->mPlayerInfo->mId + mBoardRandSeed;
 	if (mApp->IsAdventureMode())
 	{
@@ -963,7 +967,6 @@ void Board::PickBackground()
 	case GameMode::GAMEMODE_CHALLENGE_ICE:
 	case GameMode::GAMEMODE_CHALLENGE_SHOVEL:
 	case GameMode::GAMEMODE_CHALLENGE_SQUIRREL:
-	case GameMode::GAMEMODE_MULTIPLAYER_VERSUS:
 		mBackground = BackgroundType::BACKGROUND_1_DAY;
 		break;
 
@@ -1045,6 +1048,10 @@ void Board::PickBackground()
 
 	case GameMode::GAMEMODE_TREE_OF_WISDOM:
 		mBackground = BackgroundType::BACKGROUND_TREEOFWISDOM;
+		break;
+
+	case GameMode::GAMEMODE_MULTIPLAYER_VERSUS:
+		mBackground = gVersusMaps[mApp->mVersus->mMap].mBackground;
 		break;
 
 	default:
@@ -7744,6 +7751,7 @@ void Board::DrawUITop(Graphics* g)
 		{
 			mApp->mVersus->DrawIncome(g);
 			mApp->mVersus->DrawWaveInfo(g);
+			mApp->mVersus->DrawLockedZombiePackets(g);
 		}
 	}
 
