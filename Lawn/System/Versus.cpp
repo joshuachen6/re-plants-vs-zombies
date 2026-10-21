@@ -113,7 +113,7 @@ public:
 
 // Binary messages, relayed untouched by the server. Multi-byte values are little-endian.
 //   zombie   [1][seq u16][zombie type u8][row u8]
-//   snapshot [2][sun u16][income u16][mower bits u8]
+//   snapshot [2][sun u16][income u16][mower bits u8][brains u8]
 //            [plant count u8] { [x i16][y i16][seed type u8] }
 //            [zombie count u8] { [id u16][zombie type u8][x i16][y i16][flags u8] }
 //   lost     [3][seq u16]
@@ -235,6 +235,9 @@ void Versus::ResetMatch()
 	mOpponentSun = 0;
 	mOpponentIncome = 0;
 	mOpponentMowers = 0;
+	mBrains = VERSUS_STARTING_BRAINS;
+	mOpponentBrains = VERSUS_STARTING_BRAINS;
+	mBounties.clear();
 	mOpponentPlants.clear();
 	mOpponentZombies.clear();
 	mPendingZombies.clear();
@@ -339,6 +342,7 @@ void Versus::Update()
 
 	mPlayTime++;
 	UpdateNaturalWaves(aBoard);
+	UpdateBounties(aBoard);
 
 	if (++mIncomeCounter >= VERSUS_INCOME_INTERVAL)
 	{
@@ -616,13 +620,75 @@ void Versus::SpawnZombie(Board* theBoard, ZombieType theZombieType, int theRow)
 {
 	int aLane = PickLane(theBoard, theZombieType, theRow);
 	TodTrace("Versus: received zombie %d for row %d, sent down row %d", theZombieType, theRow, aLane);
-	if (aLane >= 0)
-		AddSpacedZombie(theBoard, theZombieType, aLane);
+	if (aLane < 0)
+		return;
+
+	Zombie* aZombie = AddSpacedZombie(theBoard, theZombieType, aLane);
+	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
+	{
+		if (aZombie && theZombieType != ZombieType::ZOMBIE_BUNGEE && Challenge::IZombieSeedTypeToZombieType(anOffer.mSeedType) == theZombieType)
+			AddBounty(aZombie, anOffer.mCost / VERSUS_BOUNTY_DIVISOR);
+	}
+}
+
+void Versus::AddBounty(Zombie* theZombie, int theSun)
+{
+	mBounties[mApp->mBoard->mZombies.DataArrayGetID(theZombie)] = theSun;
+}
+
+// Pays out a zombie's bounty as sun dropped where it dies
+void Versus::UpdateBounties(Board* theBoard)
+{
+	for (auto anIt = mBounties.begin(); anIt != mBounties.end(); )
+	{
+		Zombie* aZombie = theBoard->mZombies.DataArrayTryToGet(anIt->first);
+		if (aZombie && !aZombie->mDead && !aZombie->IsDeadOrDying())
+		{
+			++anIt;
+			continue;
+		}
+
+		if (aZombie)
+		{
+			TodTrace("Versus: bounty of %d sun", anIt->second);
+			int aSun = anIt->second;
+			int aX = (int)aZombie->mPosX + 30, aY = (int)aZombie->mPosY + 30;
+			for (; aSun >= 50; aSun -= 50)
+				theBoard->AddCoin(aX, aY, CoinType::COIN_LARGESUN, CoinMotion::COIN_MOTION_FROM_PLANT);
+			for (; aSun >= 25; aSun -= 25)
+				theBoard->AddCoin(aX, aY, CoinType::COIN_SUN, CoinMotion::COIN_MOTION_FROM_PLANT);
+			if (aSun >= 10)
+				theBoard->AddCoin(aX, aY, CoinType::COIN_SMALLSUN, CoinMotion::COIN_MOTION_FROM_PLANT);
+		}
+		anIt = mBounties.erase(anIt);
+	}
+}
+
+// A zombie got past the lawnmowers. Returns true if it only cost a brain, false if that was the last
+// one and the match is lost.
+bool Versus::OnZombieReachedHouse(Zombie* theZombie)
+{
+	Board* aBoard = mApp->mBoard;
+	if (mState != VERSUS_STATE_PLAYING || theZombie == nullptr || aBoard == nullptr || mBrains <= 1)
+	{
+		mBrains = 0;
+		return false;
+	}
+
+	mBrains--;
+	mBounties.erase(aBoard->mZombies.DataArrayGetID(theZombie));
+	theZombie->DieNoLoot();
+	mApp->PlayFoley(FoleyType::FOLEY_SCREAM);
+	aBoard->ClearAdviceImmediately();
+	aBoard->DisplayAdvice(StrFormat(mBrains == 1 ? __S("A zombie ate a brain! %d brain left") : __S("A zombie ate a brain! %d brains left"), mBrains),
+		MessageStyle::MESSAGE_STYLE_HINT_FAST, AdviceType::ADVICE_NONE);
+	TodTrace("Versus: a zombie ate a brain, %d left", mBrains);
+	return true;
 }
 
 // Adds a zombie at the right edge of a lane, pushed further right (to walk in behind) if it would
 // otherwise bunch up with the zombies already waiting there
-void Versus::AddSpacedZombie(Board* theBoard, ZombieType theZombieType, int theLane)
+Zombie* Versus::AddSpacedZombie(Board* theBoard, ZombieType theZombieType, int theLane)
 {
 	float aRightmost = -1000.0f;
 	Zombie* anOther = nullptr;
@@ -634,13 +700,14 @@ void Versus::AddSpacedZombie(Board* theBoard, ZombieType theZombieType, int theL
 
 	Zombie* aZombie = theBoard->AddZombieInRow(theZombieType, theLane, 0);
 	if (aZombie == nullptr || theZombieType == ZombieType::ZOMBIE_BUNGEE)
-		return;  // bungees drop in from above
+		return aZombie;  // bungees drop in from above
 
 	if (aZombie->mPosX < aRightmost + VERSUS_ZOMBIE_SPACING)
 	{
 		aZombie->mPosX = aRightmost + VERSUS_ZOMBIE_SPACING;
 		aZombie->mX = (int)aZombie->mPosX;
 	}
+	return aZombie;
 }
 
 void Versus::HandleGameData(const std::string& theData)
@@ -759,6 +826,7 @@ void Versus::SendSnapshot(Board* theBoard)
 			aMowers |= 1 << aLawnMower->mRow;
 	}
 	aWriter.U8(aMowers);
+	aWriter.U8(mBrains);
 
 	std::vector<Plant*> aPlants;
 	Plant* aPlant = nullptr;
@@ -808,6 +876,7 @@ void Versus::ReadSnapshot(const std::string& theData)
 	int aSun = aReader.U16();
 	int anIncome = aReader.U16();
 	int aMowers = aReader.U8();
+	int aBrains = aReader.U8();
 
 	std::vector<VersusRemotePlant> aPlants(aReader.U8());
 	for (VersusRemotePlant& aPlant : aPlants)
@@ -854,6 +923,7 @@ void Versus::ReadSnapshot(const std::string& theData)
 	mOpponentSun = aSun;
 	mOpponentIncome = anIncome;
 	mOpponentMowers = (uint8_t)aMowers;
+	mOpponentBrains = aBrains;
 	mOpponentPlants.swap(aPlants);
 	mOpponentZombies.swap(aZombies);
 }
@@ -965,7 +1035,7 @@ void Versus::ShowResult()
 	switch (mResult)
 	{
 	case VERSUS_RESULT_WON:				aHeader = "YOU WIN!";	aBody = "The zombies got through\nyour opponent's lawn!";		break;
-	case VERSUS_RESULT_LOST:			aHeader = "YOU LOSE";	aBody = "The zombies ate your brains.\nYour opponent wins.";	break;
+	case VERSUS_RESULT_LOST:			aHeader = "YOU LOSE";	aBody = "The zombies ate all your brains.\nYour opponent wins.";	break;
 	case VERSUS_RESULT_OPPONENT_LEFT:	aHeader = "YOU WIN!";	aBody = "Your opponent left the match.";						break;
 	case VERSUS_RESULT_DISCONNECTED:	aHeader = "DISCONNECTED";	aBody = "Lost the connection to\nthe Versus server.";		break;
 	default:																											break;
@@ -1010,7 +1080,8 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 	{
 		int aLane = PickLane(theBoard, ZombieType::ZOMBIE_FLAG, aRandom.Range(aNumLanes));
 		if (aLane >= 0)
-			AddSpacedZombie(theBoard, ZombieType::ZOMBIE_FLAG, aLane);
+			if (Zombie* aFlag = AddSpacedZombie(theBoard, ZombieType::ZOMBIE_FLAG, aLane))
+				AddBounty(aFlag, 15);
 		aCount++;
 	}
 
@@ -1032,7 +1103,8 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 			{
 				int aLane = PickLane(theBoard, aZombie.mZombieType, aRandom.Range(aNumLanes));
 				if (aLane >= 0)
-					AddSpacedZombie(theBoard, aZombie.mZombieType, aLane);
+					if (Zombie* aSpawned = AddSpacedZombie(theBoard, aZombie.mZombieType, aLane))
+						AddBounty(aSpawned, 15);
 				aPoints -= aZombie.mValue;
 				aCount++;
 				break;
@@ -1106,6 +1178,18 @@ int Versus::GetIncomeGain(int theCost) const
 	return std::min(std::max(aGain, aRoom > 0 ? 1 : 0), aRoom);
 }
 
+int Versus::GetUnlockWave(SeedType theSeedType)
+{
+	if (Challenge::IsZombieSeedType(theSeedType))
+		return GetZombieUnlockWave(theSeedType);
+	for (const VersusPlantUnlock& anUnlock : VERSUS_PLANT_UNLOCKS)
+	{
+		if (anUnlock.mSeedType == theSeedType)
+			return anUnlock.mUnlockWave;
+	}
+	return 0;
+}
+
 int Versus::GetZombieUnlockWave(SeedType theSeedType)
 {
 	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
@@ -1125,16 +1209,16 @@ void Versus::DrawZombiePacketOverlays(Graphics* g)
 		return;
 
 	SeedBank* aSeedBank = aBoard->mSeedBank;
-	for (int i = VERSUS_NUM_PLANT_PACKETS; i < aSeedBank->mNumPackets; i++)
+	for (int i = 0; i < aSeedBank->mNumPackets; i++)
 	{
 		SeedPacket& aPacket = aSeedBank->mSeedPackets[i];
 		if (aPacket.mPacketType == SeedType::SEED_NONE)
 			continue;
 
 		int aX = aSeedBank->mX + aPacket.mX, aY = aSeedBank->mY + aPacket.mY;
-		if (IsZombieUnlocked(aPacket.mPacketType))
+		if (IsSeedUnlocked(aPacket.mPacketType))
 		{
-			if (GetPackSize() > 1)
+			if (Challenge::IsZombieSeedType(aPacket.mPacketType) && GetPackSize() > 1)
 			{
 				TodDrawString(g, StrFormat(__S("x%d"), GetPackSize()), aX + SEED_PACKET_WIDTH - 4, aY + 20,
 					FONT_CONTINUUMBOLD14, Color(255, 230, 90), DrawStringJustification::DS_ALIGN_RIGHT);
@@ -1144,7 +1228,7 @@ void Versus::DrawZombiePacketOverlays(Graphics* g)
 
 		g->SetColor(Color(0, 0, 0, 150));
 		g->FillRect(aX, aY, SEED_PACKET_WIDTH, SEED_PACKET_HEIGHT);
-		TodDrawString(g, StrFormat(__S("Wave %d"), GetZombieUnlockWave(aPacket.mPacketType)), aX + SEED_PACKET_WIDTH / 2, aY + 40,
+		TodDrawString(g, StrFormat(__S("Wave %d"), GetUnlockWave(aPacket.mPacketType)), aX + SEED_PACKET_WIDTH / 2, aY + 40,
 			FONT_BRIANNETOD12, Color(255, 220, 120), DrawStringJustification::DS_ALIGN_CENTER);
 	}
 }
@@ -1263,6 +1347,9 @@ void Versus::DrawOpponentView(Graphics* g)
 
 	SexyString aCaption = mHasOpponentSnapshot ? StrFormat(__S("Opponent: %d (+%d)"), mOpponentSun, mOpponentIncome) : __S("Opponent");
 	DrawCaption(g, aCaption, aRect.mY + aRect.mHeight + 12, Color(255, 255, 255));
+	if (mHasOpponentSnapshot)
+		TodDrawString(g, StrFormat(mOpponentBrains == 1 ? __S("%d brain") : __S("%d brains"), mOpponentBrains), aRect.mX + 4, aRect.mY + 12,
+			FONT_BRIANNETOD12, Color(255, 200, 200), DrawStringJustification::DS_ALIGN_LEFT);
 }
 
 void Versus::DrawWaveInfo(Graphics* g)
@@ -1280,4 +1367,6 @@ void Versus::DrawWaveInfo(Graphics* g)
 void Versus::DrawIncome(Graphics* g)
 {
 	TodDrawString(g, StrFormat(mIncome >= VERSUS_MAX_INCOME ? __S("+%d max") : __S("+%d"), mIncome), 34, 100, FONT_CONTINUUMBOLD14, Color(255, 255, 160), DrawStringJustification::DS_ALIGN_CENTER);
+	TodDrawString(g, StrFormat(mBrains == 1 ? __S("%d brain") : __S("%d brains"), mBrains), 6, 118, FONT_BRIANNETOD12,
+		mBrains == 1 ? Color(255, 90, 90) : Color(255, 200, 200), DrawStringJustification::DS_ALIGN_LEFT);
 }

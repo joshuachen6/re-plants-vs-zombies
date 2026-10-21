@@ -13,6 +13,7 @@
 class LawnApp;
 class Board;
 class Plant;
+class Zombie;
 class ZombieChooserScreen;
 namespace Sexy
 {
@@ -44,6 +45,30 @@ constexpr int VERSUS_MAX_ZOMBIES_PER_WAVE = 30;
 constexpr int VERSUS_ZOMBIE_SPACING = 150;			// px between zombies spawned in the same lane, so one
 													// squash or cherry bomb can't take out a whole pack (zombies
 													// walk at slightly different speeds, so the gaps shrink a bit)
+
+// Brains work like lives: a zombie that gets past the lawnmowers eats one instead of ending the match
+constexpr int VERSUS_STARTING_BRAINS = 3;
+
+// Bounties: killing a zombie the opponent sent drops sun worth a share of what they paid for it, so
+// spamming zombies into a strong defence feeds the defender. Natural-wave zombies drop a small sun.
+constexpr int VERSUS_BOUNTY_DIVISOR = 4;
+
+// Upgrade plants unlock as the natural waves go by, like the zombies do
+struct VersusPlantUnlock
+{
+	SeedType				mSeedType;
+	int						mUnlockWave;
+};
+constexpr VersusPlantUnlock VERSUS_PLANT_UNLOCKS[] = {
+	{ SeedType::SEED_TWINSUNFLOWER,	4 },
+	{ SeedType::SEED_GATLINGPEA,	6 },
+	{ SeedType::SEED_GOLD_MAGNET,	6 },
+	{ SeedType::SEED_GLOOMSHROOM,	8 },
+	{ SeedType::SEED_CATTAIL,		8 },
+	{ SeedType::SEED_SPIKEROCK,		8 },
+	{ SeedType::SEED_WINTERMELON,	10 },
+	{ SeedType::SEED_COBCANNON,		12 },
+};
 
 // Sun producers work like farms in Bloons TD Battles: pricier than usual, and their sun drops grow as
 // they ripen, so they lose to eco early but out-earn it late (if they survive)
@@ -176,6 +201,9 @@ public:
 	std::vector<VersusRemoteZombie>	mOpponentZombies;
 	std::vector<VersusPendingZombie>	mPendingZombies;	// sent before our level started
 	std::unordered_map<unsigned int, int>	mFarmFirstSun;	// sun producer id -> mPlayTime of its first drop
+	std::unordered_map<unsigned int, int>	mBounties;		// zombie id -> sun dropped when it's killed
+	int						mBrains;
+	int						mOpponentBrains;
 
 	// Zombies sent and "I lost" are numbered, kept, and resent after a reconnect if the opponent
 	// says it missed them
@@ -220,11 +248,14 @@ public:
 	int						GetSendCost(SeedType theSeedType) const { return GetZombieCost(theSeedType) * GetPackSize(); }
 	int						GetIncomeGain(int theCost) const;
 	static int				GetZombieUnlockWave(SeedType theSeedType);
+	static int				GetUnlockWave(SeedType theSeedType);	// plants or zombies; 0 if always available
 	bool					IsZombieUnlocked(SeedType theSeedType) const { return mWaveNumber >= GetZombieUnlockWave(theSeedType); }
+	bool					IsSeedUnlocked(SeedType theSeedType) const { return mWaveNumber >= GetUnlockWave(theSeedType); }
+	bool					OnZombieReachedHouse(Zombie* theZombie);
 	void					DrawZombiePacketOverlays(Sexy::Graphics* g);
 	bool					IsZombieAllowedOnMap(ZombieType theZombieType) const;
 	static int				PickLane(Board* theBoard, ZombieType theZombieType, int theRow);
-	static void				AddSpacedZombie(Board* theBoard, ZombieType theZombieType, int theLane);
+	static Zombie*			AddSpacedZombie(Board* theBoard, ZombieType theZombieType, int theLane);
 
 	// Opponent view, drawn in the top bar
 	static Sexy::Rect		GetOpponentViewRect();
@@ -249,6 +280,8 @@ private:
 	void					SendSnapshot(Board* theBoard);
 	void					ReadSnapshot(const std::string& theData);
 	void					UpdateNaturalWaves(Board* theBoard);
+	void					UpdateBounties(Board* theBoard);
+	void					AddBounty(Zombie* theZombie, int theSun);
 	void					SpawnNaturalWave(Board* theBoard, int theWave);
 };
 

@@ -679,8 +679,8 @@ bool SeedPacket::CanPickUp()
 		return false;
 	}
 
-	// Versus zombies unlock as the natural waves go by
-	if (mApp->IsVersusMode() && Challenge::IsZombieSeedType(mPacketType) && !mApp->mVersus->IsZombieUnlocked(mPacketType))
+	// In Versus, upgrade plants and zombies unlock as the natural waves go by
+	if (mApp->IsVersusMode() && !mApp->mVersus->IsSeedUnlocked(mPacketType))
 	{
 		return false;
 	}
@@ -733,8 +733,8 @@ void SeedPacket::MouseDown(int x, int y, int theClickCount)
 		aUseSeedType = mImitaterType;
 	}
 
-	// Versus zombies unlock as the natural waves go by
-	if (mApp->IsVersusMode() && Challenge::IsZombieSeedType(mPacketType) && !mApp->mVersus->IsZombieUnlocked(mPacketType))
+	// In Versus, upgrade plants and zombies unlock as the natural waves go by
+	if (mApp->IsVersusMode() && !mApp->mVersus->IsSeedUnlocked(mPacketType))
 	{
 		mApp->PlaySample(SOUND_BUZZER);
 		return;

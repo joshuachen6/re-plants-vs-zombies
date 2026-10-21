@@ -5298,6 +5298,10 @@ void Board::ZombiesWon(Zombie* theZombie)
 	if (mApp->mGameScene == GameScenes::SCENE_ZOMBIES_WON)
 		return;
 
+	// Versus: brains work like lives, so a zombie getting in only ends the match on the last one
+	if (mApp->IsVersusMode() && mApp->mVersus->OnZombieReachedHouse(theZombie))
+		return;
+
 	ClearAdvice(AdviceType::ADVICE_NONE);
 	mApp->mBoardResult = BoardResult::BOARDRESULT_LOST;
 	if (mApp->IsVersusMode())
