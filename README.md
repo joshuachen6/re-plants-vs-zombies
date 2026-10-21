@@ -54,6 +54,7 @@ The web build adds a **Versus** button to the main menu: a head-to-head mode in 
 - Like the rounds in Bloons TD Battles, both lawns also get the same natural waves at the same time: the first 25 seconds in, then every 25 seconds, growing and adding tougher zombies as the match goes on. Every 5th wave is a huge wave.
 - The top-right view shows your opponent's lawn, sun and income, updated 10 times a second.
 - The first player whose lawn a zombie gets through loses. Lawnmowers work as usual. Leaving the match forfeits it.
+- If a player's connection drops, both games pause while that game reconnects by itself. The server holds the player's spot for 60 seconds and nothing sent in the meantime is lost; after that, the opponent wins. A match also keeps running if its browser tab is in the background.
 
 The game talks to a small relay server in `server/` (Node.js), which pairs players by room code and forwards their messages:
 

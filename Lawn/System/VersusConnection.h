@@ -38,17 +38,19 @@ public:
 	bool						Connect(const std::string& theUrl);
 	void						Close();
 	bool						IsOpen() const { return mOpen; }
+	bool						IsConnecting() const { return mConnecting; }
 	void						SendText(const std::string& theText);
 	void						SendBinary(const std::vector<uint8_t>& theData);
 	bool						Poll(Event& theEvent);
 
 	// Called from the socket callbacks
 	void						PushEvent(EventType theType, const char* theData, size_t theLength);
-	void						SetOpen(bool theOpen) { mOpen = theOpen; }
+	void						SetOpen(bool theOpen) { mOpen = theOpen; mConnecting = false; }
 
 private:
 	int							mSocket;
 	bool						mOpen;
+	bool						mConnecting;
 	std::deque<Event>			mEvents;
 };
 

@@ -38,6 +38,15 @@ constexpr int VERSUS_WAVE_INTERVAL = 2500;			// updates between waves
 constexpr int VERSUS_HUGE_WAVE_EVERY = 5;			// every Nth wave is twice the size
 constexpr int VERSUS_MAX_ZOMBIES_PER_WAVE = 30;
 
+// Connection: if nothing arrives from the server for a while (it answers our keepalive pings), the
+// connection is treated as lost. Both games then pause while this one tries to rejoin; the server
+// holds our spot for 60 s.
+constexpr int VERSUS_KEEPALIVE_MS = 2000;
+constexpr int VERSUS_SILENCE_TIMEOUT_MS = 6000;
+constexpr int VERSUS_RECONNECT_INTERVAL_MS = 2000;
+constexpr int VERSUS_CONNECT_TIMEOUT_MS = 5000;
+constexpr int VERSUS_RECONNECT_GIVE_UP_MS = 55000;
+
 struct VersusZombieOffer
 {
 	SeedType				mSeedType;
@@ -74,6 +83,12 @@ struct VersusRemotePlant
 	SeedType				mSeedType;
 };
 
+struct VersusPendingZombie
+{
+	ZombieType				mZombieType;
+	int						mRow;
+};
+
 struct VersusRemoteZombie
 {
 	uint16_t				mId;
@@ -93,6 +108,7 @@ public:
 	std::string				mStatus;				// shown in the lobby dialog
 	std::string				mJoinCode;				// empty when creating a room
 	std::string				mRoomCode;
+	std::string				mToken;					// lets us rejoin the room after a dropped connection
 	uint32_t				mSeed;					// shared by both players, for the natural waves
 	int						mPlayTime;				// updates since the match started
 	int						mWaveNumber;			// natural waves spawned so far
@@ -112,6 +128,23 @@ public:
 	uint8_t					mOpponentMowers;		// bit per row with a lawnmower left
 	std::vector<VersusRemotePlant>	mOpponentPlants;
 	std::vector<VersusRemoteZombie>	mOpponentZombies;
+	std::vector<VersusPendingZombie>	mPendingZombies;	// sent before our level started
+
+	// Zombies sent and "I lost" are numbered, kept, and resent after a reconnect if the opponent
+	// says it missed them
+	int						mNextSendSeq;
+	int						mLastReceivedSeq;
+	std::vector<std::vector<uint8_t>>	mSentReliable;
+
+	bool					mReconnecting;
+	bool					mOpponentDisconnected;
+	uint32_t				mReconnectGiveUpTime;
+	uint32_t				mNextConnectTime;
+	uint32_t				mConnectStartTime;
+	uint32_t				mLastReceiveTime;
+	uint32_t				mLastKeepaliveTime;
+	int						mConnectionDialog;		// which connection message is showing, if any
+	bool					mKeepRunningHidden;
 
 public:
 	Versus(LawnApp* theApp);
@@ -120,6 +153,8 @@ public:
 	void					Cancel();				// leave the room and close the connection
 	void					Update();
 	bool					IsMatchmaking() const { return mState == VERSUS_STATE_CONNECTING || mState == VERSUS_STATE_IN_LOBBY; }
+	bool					IsInMatch() const { return mState == VERSUS_STATE_CHOOSING_SEEDS || mState == VERSUS_STATE_PLAYING; }
+	bool					IsConnectionPaused() const { return IsInMatch() && (mReconnecting || mOpponentDisconnected); }
 
 	// Hooks from the board and seed chooser
 	int						GetNumSeedsInBank() const;
@@ -146,6 +181,12 @@ private:
 	void					HandleControl(const std::string& theMessage);
 	void					HandleGameData(const std::string& theData);
 	void					HandleDisconnect();
+	void					BeginReconnect();
+	void					UpdateConnection();
+	void					UpdateConnectionDialog();
+	void					SpawnZombie(Board* theBoard, ZombieType theZombieType, int theRow);
+	void					SendReliable(std::vector<uint8_t> theMessage);
+	void					SendResume();
 	void					EndMatch(VersusResult theResult);
 	void					SendSnapshot(Board* theBoard);
 	void					ReadSnapshot(const std::string& theData);

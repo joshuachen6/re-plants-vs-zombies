@@ -5,19 +5,28 @@
 // messages (JSON text frames); everything else (binary frames) is game data that it forwards
 // untouched to the other player in the room.
 //
-//   client -> server   {"t":"create"}                  server -> client   {"t":"created","code":"ABCD"}
-//                      {"t":"join","code":"ABCD"}                         {"t":"joined","code":"ABCD"}
-//                      {"t":"ready"}                                      {"t":"opponent_joined"}
-//                      {"t":"leave"}                                      {"t":"start","seed":123}
-//                                                                         {"t":"opponent_ready"}
-//                                                                         {"t":"go"}
-//                                                                         {"t":"opponent_left"}
-//                                                                         {"t":"error","msg":"..."}
+//   client -> server                          server -> client
+//     {"t":"create"}                             {"t":"created","code":"ABCD","token":"..."}
+//     {"t":"join","code":"ABCD"}                 {"t":"joined","code":"ABCD","token":"..."}
+//     {"t":"rejoin","code":"ABCD","token":"..."} {"t":"rejoined","code":"ABCD","go":true,"opponentConnected":true,"opponentReady":true}
+//     {"t":"ready"}                              {"t":"opponent_joined"}
+//     {"t":"leave"}                              {"t":"start","seed":123}
+//     {"t":"ping"}                               {"t":"pong"}
+//                                                {"t":"opponent_ready"}
+//                                                {"t":"go"}
+//                                                {"t":"opponent_disconnected"}  (they have a while to rejoin)
+//                                                {"t":"opponent_reconnected"}
+//                                                {"t":"opponent_left"}          (left, or didn't make it back)
+//                                                {"t":"error","msg":"..."}
+//
+// A player whose connection drops mid-match keeps their spot for RECONNECT_GRACE_MS. Game data sent
+// to them meanwhile is queued and delivered when they rejoin with the token they were given.
 //
 // Usage: node relay.js [--port 8787] [--host 127.0.0.1] [--static ../build-web]
 
 'use strict';
 
+const crypto = require('crypto');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -27,6 +36,12 @@ const { WebSocketServer } = require('ws');
 // short network stall doesn't end a match
 const HEARTBEAT_MS = 15000;
 const MAX_MISSED_PONGS = 2;
+// A player who drops out of a match gets this long to reconnect before the opponent wins
+const RECONNECT_GRACE_MS = 60000;
+// Games send a keepalive every 2 s during a match; one that goes quiet this long has lost its
+// connection even if TCP hasn't noticed, so its opponent is told (and paused) straight away
+const MATCH_SILENCE_MS = 6000;
+const MAX_QUEUED_FRAMES = 2000;
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, they read like 1 and 0
 
 const MIME_TYPES = {
@@ -75,17 +90,25 @@ function serveStatic(staticDir, req, res) {
 	});
 }
 
-function createRelay({ port, host, staticDir, log = console.log }) {
+function createRelay({ port, host, staticDir, log = console.log, graceMs = RECONNECT_GRACE_MS }) {
 	let nextClientId = 1;
-	const rooms = new Map(); // code -> { players: [ws, ws?], ready: Set<ws> }
+
+	// code -> room. A room has up to two player slots; a slot outlives its socket so a player who
+	// drops out can come back with their token.
+	//   room = { code, slots: [slot, slot?], ready: Set<slot>, started, seed }
+	//   slot = { token, ws (null while disconnected), queue: [binary frames for it], graceTimer }
+	const rooms = new Map();
 
 	function send(ws, msg) {
 		if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
 	}
 
-	function opponentOf(ws) {
-		const room = ws.room && rooms.get(ws.room);
-		return room ? room.players.find(p => p !== ws) : undefined;
+	function sendToSlot(slot, msg) {
+		if (slot) send(slot.ws, msg);
+	}
+
+	function otherSlot(room, slot) {
+		return room.slots.find(s => s !== slot);
 	}
 
 	function newCode() {
@@ -96,62 +119,155 @@ function createRelay({ port, host, staticDir, log = console.log }) {
 		}
 	}
 
-	function leaveRoom(ws) {
+	function newSlot(ws) {
+		const slot = { token: crypto.randomBytes(16).toString('hex'), ws, queue: [], graceTimer: null };
+		ws.slot = slot;
+		return slot;
+	}
+
+	function closeRoom(room, reason) {
+		for (const slot of room.slots) {
+			clearTimeout(slot.graceTimer);
+			if (slot.ws) {
+				slot.ws.room = null;
+				slot.ws.slot = null;
+			}
+		}
+		rooms.delete(room.code);
+		log(`room ${room.code} closed (${reason})`);
+	}
+
+	// The player left on purpose, or their spot ran out of time: the opponent wins
+	function forfeit(room, slot, reason) {
+		sendToSlot(otherSlot(room, slot), { t: 'opponent_left' });
+		closeRoom(room, reason);
+	}
+
+	function socketClosed(ws) {
 		const room = ws.room && rooms.get(ws.room);
-		if (!room) return;
-		send(opponentOf(ws), { t: 'opponent_left' });
-		for (const p of room.players) p.room = null;
-		rooms.delete(ws.room);
+		const slot = ws.slot;
+		if (!room || !slot || slot.ws !== ws) return;
+
+		// Nobody to play against yet, so there's nothing to come back to
+		if (room.slots.length < 2) {
+			closeRoom(room, 'host left the lobby');
+			return;
+		}
+
+		slot.ws = null;
+		sendToSlot(otherSlot(room, slot), { t: 'opponent_disconnected' });
+		slot.graceTimer = setTimeout(() => forfeit(room, slot, 'player did not reconnect'), graceMs);
+	}
+
+	function leaveCurrentRoom(ws) {
+		const room = ws.room && rooms.get(ws.room);
+		if (room && ws.slot) forfeit(room, ws.slot, 'player left');
 	}
 
 	function handleControl(ws, msg) {
+		const room = ws.room && rooms.get(ws.room);
+
 		switch (msg.t) {
 			case 'create': {
-				leaveRoom(ws);
+				leaveCurrentRoom(ws);
 				const code = newCode();
-				rooms.set(code, { players: [ws], ready: new Set() });
+				const slot = newSlot(ws);
+				rooms.set(code, { code, slots: [slot], ready: new Set(), started: false, seed: 0 });
 				ws.room = code;
 				log(`client ${ws.id} created room ${code}`);
-				send(ws, { t: 'created', code });
+				send(ws, { t: 'created', code, token: slot.token });
 				break;
 			}
 
 			case 'join': {
 				const code = String(msg.code || '').toUpperCase();
-				const room = rooms.get(code);
-				if (!room) return send(ws, { t: 'error', msg: 'No room with that code' });
-				if (room.players.length >= 2) return send(ws, { t: 'error', msg: 'That room is full' });
-				if (room.players[0] === ws) return send(ws, { t: 'error', msg: 'You are already in that room' });
+				const target = rooms.get(code);
+				if (!target) return send(ws, { t: 'error', msg: 'No room with that code' });
+				if (target.slots.length >= 2) return send(ws, { t: 'error', msg: 'That room is full' });
+				if (target.slots[0].ws === ws) return send(ws, { t: 'error', msg: 'You are already in that room' });
 
-				leaveRoom(ws);
-				room.players.push(ws);
+				leaveCurrentRoom(ws);
+				const slot = newSlot(ws);
+				target.slots.push(slot);
+				target.seed = Math.floor(Math.random() * 0x7fffffff);
 				ws.room = code;
 				log(`client ${ws.id} joined room ${code}`);
-				send(ws, { t: 'joined', code });
-				send(room.players[0], { t: 'opponent_joined' });
+				send(ws, { t: 'joined', code, token: slot.token });
+				sendToSlot(target.slots[0], { t: 'opponent_joined' });
+				for (const s of target.slots) sendToSlot(s, { t: 'start', seed: target.seed });
+				break;
+			}
 
-				const seed = Math.floor(Math.random() * 0x7fffffff);
-				for (const p of room.players) send(p, { t: 'start', seed });
+			case 'rejoin': {
+				const code = String(msg.code || '').toUpperCase();
+				const target = rooms.get(code);
+				const slot = target && target.slots.find(s => s.token === msg.token);
+				if (!slot) return send(ws, { t: 'error', msg: 'That match has ended' });
+
+				// The old socket may not have noticed it's dead yet
+				if (slot.ws && slot.ws !== ws) {
+					slot.ws.room = null;
+					slot.ws.slot = null;
+					slot.ws.terminate();
+				}
+				leaveCurrentRoom(ws);
+				clearTimeout(slot.graceTimer);
+				slot.graceTimer = null;
+				slot.ws = ws;
+				ws.slot = slot;
+				ws.room = code;
+
+				const other = otherSlot(target, slot);
+				log(`client ${ws.id} rejoined room ${code}`);
+				send(ws, {
+					t: 'rejoined',
+					code,
+					go: target.started,
+					opponentConnected: !!(other && other.ws),
+					opponentReady: !!(other && target.ready.has(other)),
+				});
+				for (const frame of slot.queue) ws.send(frame, { binary: true });
+				slot.queue = [];
+				sendToSlot(other, { t: 'opponent_reconnected' });
 				break;
 			}
 
 			case 'ready': {
-				const room = ws.room && rooms.get(ws.room);
-				if (!room || room.players.length < 2) return;
-				room.ready.add(ws);
-				send(opponentOf(ws), { t: 'opponent_ready' });
-				if (room.ready.size === 2) {
-					for (const p of room.players) send(p, { t: 'go' });
+				if (!room || room.slots.length < 2) return;
+				room.ready.add(ws.slot);
+				sendToSlot(otherSlot(room, ws.slot), { t: 'opponent_ready' });
+				if (room.ready.size === 2 && !room.started) {
+					room.started = true;
+					for (const s of room.slots) sendToSlot(s, { t: 'go' });
 				}
 				break;
 			}
 
 			case 'leave':
-				leaveRoom(ws);
+				leaveCurrentRoom(ws);
+				break;
+
+			// Lets the game notice a dead connection quickly, whatever phase the match is in
+			case 'ping':
+				ws.sendsKeepalives = true;
+				send(ws, { t: 'pong' });
 				break;
 
 			default:
 				send(ws, { t: 'error', msg: `Unknown message "${msg.t}"` });
+		}
+	}
+
+	function relayBinary(ws, data) {
+		const room = ws.room && rooms.get(ws.room);
+		const other = room && otherSlot(room, ws.slot);
+		if (!other) return;
+
+		if (other.ws && other.ws.readyState === other.ws.OPEN) {
+			other.ws.send(data, { binary: true });
+		} else if (other.queue.length < MAX_QUEUED_FRAMES) {
+			// Held for when the opponent reconnects, so sent zombies aren't lost
+			other.queue.push(data);
 		}
 	}
 
@@ -161,16 +277,14 @@ function createRelay({ port, host, staticDir, log = console.log }) {
 	wss.on('connection', (ws, req) => {
 		ws.id = nextClientId++;
 		ws.room = null;
+		ws.slot = null;
 		ws.missedPongs = 0;
 		ws.on('pong', () => { ws.missedPongs = 0; });
 		log(`client ${ws.id} connected from ${req.headers['x-real-ip'] || req.socket.remoteAddress}`);
 
 		ws.on('message', (data, isBinary) => {
-			if (isBinary) {
-				const opponent = opponentOf(ws);
-				if (opponent && opponent.readyState === opponent.OPEN) opponent.send(data, { binary: true });
-				return;
-			}
+			ws.lastSeen = Date.now();
+			if (isBinary) return relayBinary(ws, data);
 
 			let msg;
 			try {
@@ -183,7 +297,7 @@ function createRelay({ port, host, staticDir, log = console.log }) {
 
 		ws.on('close', (code) => {
 			log(`client ${ws.id} disconnected (code ${code})${ws.room ? ` from room ${ws.room}` : ''}`);
-			leaveRoom(ws);
+			socketClosed(ws);
 		});
 	});
 
@@ -199,12 +313,27 @@ function createRelay({ port, host, staticDir, log = console.log }) {
 		}
 	}, HEARTBEAT_MS);
 
-	wss.on('close', () => clearInterval(heartbeat));
+	const silenceCheck = setInterval(() => {
+		const now = Date.now();
+		for (const ws of wss.clients) {
+			const room = ws.room && rooms.get(ws.room);
+			if (ws.sendsKeepalives && room && room.slots.length === 2 && now - ws.lastSeen > MATCH_SILENCE_MS) {
+				log(`client ${ws.id} went quiet`);
+				ws.terminate();
+			}
+		}
+	}, 1000);
+
+	wss.on('close', () => {
+		clearInterval(heartbeat);
+		clearInterval(silenceCheck);
+	});
 
 	return new Promise(resolve => {
 		server.listen(port, host, () => resolve({
 			port: server.address().port,
 			close: () => new Promise(done => {
+				for (const room of rooms.values()) for (const slot of room.slots) clearTimeout(slot.graceTimer);
 				for (const ws of wss.clients) ws.terminate();
 				wss.close();
 				server.close(done);

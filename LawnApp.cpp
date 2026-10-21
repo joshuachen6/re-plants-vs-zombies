@@ -1183,8 +1183,9 @@ bool LawnApp::KillAlmanacDialog()
 //0x4516F0
 bool LawnApp::NeedPauseGame()
 {
-	if (IsVersusMode())  // the opponent's game keeps going
-		return false;
+	// The opponent's game keeps going, so only a lost connection (which pauses both) pauses Versus
+	if (IsVersusMode())
+		return mVersus->IsConnectionPaused();
 
 	if (mDialogList.size() == 0)
 		return false;
@@ -2003,6 +2004,11 @@ void LawnApp::ButtonDepress(int theId)
 
 		case Dialogs::DIALOG_VERSUS_RESULT:
 			KillDialog(Dialogs::DIALOG_VERSUS_RESULT);
+			mVersus->Cancel();
+			DoBackToMain();
+			return;
+
+		case Dialogs::DIALOG_VERSUS_CONNECTION:  // "Leave Match": forfeits
 			mVersus->Cancel();
 			DoBackToMain();
 			return;

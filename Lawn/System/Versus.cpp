@@ -18,8 +18,28 @@
 #include "graphics/Font.h"
 #include "widget/WidgetManager.h"
 
+#include <SDL.h>
 #include <algorithm>
 #include <cstdlib>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// Read by GLInterface::Flush: during a match the game keeps running while its page is hidden, so the
+// opponent isn't left playing against a frozen board and the connection keeps being serviced
+EM_JS(void, SetKeepRunningHiddenJS, (int theKeepRunning), {
+	Module.pvzKeepRunningHidden = !!theKeepRunning;
+});
+#else
+static void SetKeepRunningHiddenJS(int) {}
+#endif
+
+enum VersusConnectionDialog
+{
+	VERSUS_CONNECTION_DIALOG_NONE,
+	VERSUS_CONNECTION_DIALOG_RECONNECTING,
+	VERSUS_CONNECTION_DIALOG_OPPONENT_AWAY
+};
 
 // Every zombie that can be sent, in the order the zombie chooser shows them. Prices are roughly the
 // sun worth of plants it takes to stop each zombie, so sending isn't cheaper than defending.
@@ -81,16 +101,19 @@ public:
 };
 
 // Binary messages, relayed untouched by the server. Multi-byte values are little-endian.
-//   zombie   [1][zombie type u8][row u8]
+//   zombie   [1][seq u16][zombie type u8][row u8]
 //   snapshot [2][sun u16][income u16][mower bits u8]
 //            [plant count u8] { [x i16][y i16][seed type u8] }
 //            [zombie count u8] { [id u16][zombie type u8][x i16][y i16][flags u8] }
-//   lost     [3]
+//   lost     [3][seq u16]
+//   resume   [4][last seq received u16]   sent after a reconnect; the other side resends what's missing
+// Messages with a seq are reliable: numbered from 1, kept by the sender, and ignored if already seen.
 enum VersusMessage
 {
 	VERSUS_MSG_ZOMBIE = 1,
 	VERSUS_MSG_SNAPSHOT = 2,
-	VERSUS_MSG_LOST = 3
+	VERSUS_MSG_LOST = 3,
+	VERSUS_MSG_RESUME = 4
 };
 
 enum VersusZombieFlags
@@ -178,7 +201,8 @@ namespace
 	}
 }
 
-Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE), mSeed(0), mZombieChooser(nullptr)
+Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE), mSeed(0), mZombieChooser(nullptr),
+	mConnectionDialog(VERSUS_CONNECTION_DIALOG_NONE), mKeepRunningHidden(false)
 {
 	ResetMatch();
 }
@@ -202,6 +226,13 @@ void Versus::ResetMatch()
 	mOpponentMowers = 0;
 	mOpponentPlants.clear();
 	mOpponentZombies.clear();
+	mPendingZombies.clear();
+	mNextSendSeq = 1;
+	mLastReceivedSeq = 0;
+	mSentReliable.clear();
+	mReconnecting = false;
+	mOpponentDisconnected = false;
+	mLastReceiveTime = mLastKeepaliveTime = SDL_GetTicks();
 }
 
 void Versus::StartMatchmaking(const std::string& theJoinCode)
@@ -232,6 +263,9 @@ void Versus::Cancel()
 	mConnection.Close();
 	mState = VERSUS_STATE_OFF;
 	mStatus.clear();
+	mReconnecting = false;
+	mOpponentDisconnected = false;
+	UpdateConnectionDialog();
 }
 
 void Versus::Update()
@@ -242,6 +276,12 @@ void Versus::Update()
 		switch (anEvent.mType)
 		{
 		case VersusConnection::EVENT_OPEN:
+			mLastReceiveTime = SDL_GetTicks();
+			if (mReconnecting)
+			{
+				mConnection.SendText("{\"t\":\"rejoin\",\"code\":\"" + mRoomCode + "\",\"token\":\"" + mToken + "\"}");
+				break;
+			}
 			if (mJoinCode.empty())
 				mConnection.SendText("{\"t\":\"create\"}");
 			else
@@ -254,18 +294,34 @@ void Versus::Update()
 			break;
 
 		case VersusConnection::EVENT_TEXT:
+			mLastReceiveTime = SDL_GetTicks();
 			HandleControl(anEvent.mData);
 			break;
 
 		case VersusConnection::EVENT_BINARY:
+			mLastReceiveTime = SDL_GetTicks();
 			HandleGameData(anEvent.mData);
 			break;
 		}
 	}
 
+	UpdateConnection();
+
+	if (mKeepRunningHidden != IsInMatch())
+	{
+		mKeepRunningHidden = IsInMatch();
+		SetKeepRunningHiddenJS(mKeepRunningHidden);
+	}
+
+	// Waves, income and snapshots stop while the game is paused for a lost connection, so both
+	// players' waves stay in step
 	Board* aBoard = mApp->mBoard;
-	if (mState != VERSUS_STATE_PLAYING || aBoard == nullptr || !mApp->IsVersusMode() || mApp->mGameScene != GameScenes::SCENE_PLAYING)
+	if (mState != VERSUS_STATE_PLAYING || aBoard == nullptr || !mApp->IsVersusMode() || mApp->mGameScene != GameScenes::SCENE_PLAYING || aBoard->mPaused)
 		return;
+
+	for (const VersusPendingZombie& aZombie : mPendingZombies)
+		SpawnZombie(aBoard, aZombie.mZombieType, aZombie.mRow);
+	mPendingZombies.clear();
 
 	mPlayTime++;
 	UpdateNaturalWaves(aBoard);
@@ -293,9 +349,14 @@ void Versus::HandleControl(const std::string& theMessage)
 {
 	std::string aType = JsonField(theMessage, "t");
 
-	if (aType == "created")
+	if (aType == "pong")
+	{
+		return;
+	}
+	else if (aType == "created")
 	{
 		mRoomCode = JsonField(theMessage, "code");
+		mToken = JsonField(theMessage, "token");
 		mState = VERSUS_STATE_IN_LOBBY;
 		mStatus = "Room code: " + mRoomCode + "\nWaiting for an opponent...";
 		TodTrace("Versus: created room %s", mRoomCode.c_str());
@@ -303,6 +364,7 @@ void Versus::HandleControl(const std::string& theMessage)
 	else if (aType == "joined")
 	{
 		mRoomCode = JsonField(theMessage, "code");
+		mToken = JsonField(theMessage, "token");
 		mState = VERSUS_STATE_IN_LOBBY;
 		mStatus = "Joined room " + mRoomCode + ".";
 	}
@@ -328,6 +390,36 @@ void Versus::HandleControl(const std::string& theMessage)
 		mGo = true;
 		mState = VERSUS_STATE_PLAYING;
 	}
+	else if (aType == "rejoined")
+	{
+		TodTrace("Versus: rejoined room %s", mRoomCode.c_str());
+		mReconnecting = false;
+		mOpponentDisconnected = JsonField(theMessage, "opponentConnected") != "true";
+		if (JsonField(theMessage, "opponentReady") == "true")
+			mOpponentReady = true;
+		if (JsonField(theMessage, "go") == "true" && !mGo)
+		{
+			mGo = true;
+			mState = VERSUS_STATE_PLAYING;
+		}
+		else if (mZombiesChosen && !mGo)
+		{
+			mConnection.SendText("{\"t\":\"ready\"}");  // it may have been lost with the old connection
+		}
+		SendResume();
+		UpdateConnectionDialog();
+	}
+	else if (aType == "opponent_disconnected")
+	{
+		mOpponentDisconnected = true;
+		UpdateConnectionDialog();
+	}
+	else if (aType == "opponent_reconnected")
+	{
+		mOpponentDisconnected = false;
+		SendResume();
+		UpdateConnectionDialog();
+	}
 	else if (aType == "opponent_left")
 	{
 		if (mState == VERSUS_STATE_CHOOSING_SEEDS || mState == VERSUS_STATE_PLAYING)
@@ -340,6 +432,10 @@ void Versus::HandleControl(const std::string& theMessage)
 		{
 			Cancel();
 			mStatus = anError + ".";
+		}
+		else if (mReconnecting)
+		{
+			EndMatch(VERSUS_RESULT_DISCONNECTED);  // the server gave our spot away
 		}
 		else
 		{
@@ -366,7 +462,10 @@ void Versus::HandleDisconnect()
 
 	case VERSUS_STATE_CHOOSING_SEEDS:
 	case VERSUS_STATE_PLAYING:
-		EndMatch(VERSUS_RESULT_DISCONNECTED);
+		if (mReconnecting)
+			mConnection.Close();  // this attempt failed; UpdateConnection tries again
+		else
+			BeginReconnect();
 		break;
 
 	default:
@@ -374,9 +473,99 @@ void Versus::HandleDisconnect()
 	}
 }
 
+void Versus::BeginReconnect()
+{
+	TodTrace("Versus: connection lost, reconnecting");
+	mConnection.Close();
+	mReconnecting = true;
+	uint32_t aNow = SDL_GetTicks();
+	mReconnectGiveUpTime = aNow + VERSUS_RECONNECT_GIVE_UP_MS;
+	mNextConnectTime = aNow;
+	UpdateConnectionDialog();
+}
+
+void Versus::UpdateConnection()
+{
+	if (!IsInMatch())
+		return;
+
+	uint32_t aNow = SDL_GetTicks();
+	if (mReconnecting)
+	{
+		if ((int)(aNow - mReconnectGiveUpTime) >= 0)
+		{
+			mConnection.Close();
+			EndMatch(VERSUS_RESULT_DISCONNECTED);
+			return;
+		}
+
+		// An attempt that hasn't opened in time is abandoned and retried
+		if (mConnection.IsConnecting() && (int)(aNow - mConnectStartTime) >= VERSUS_CONNECT_TIMEOUT_MS)
+			mConnection.Close();
+
+		if (!mConnection.IsConnecting() && !mConnection.IsOpen() && (int)(aNow - mNextConnectTime) >= 0)
+		{
+			mConnectStartTime = aNow;
+			mNextConnectTime = aNow + VERSUS_RECONNECT_INTERVAL_MS;
+			mConnection.Connect(VersusConnection::GetServerUrl());
+		}
+		return;
+	}
+
+	if (!mConnection.IsOpen())
+		return;
+
+	if ((int)(aNow - mLastKeepaliveTime) >= VERSUS_KEEPALIVE_MS)
+	{
+		mLastKeepaliveTime = aNow;
+		mConnection.SendText("{\"t\":\"ping\"}");
+	}
+
+	// The server answers every keepalive, so a long silence means the connection is dead even if the
+	// browser hasn't noticed yet
+	if ((int)(aNow - mLastReceiveTime) >= VERSUS_SILENCE_TIMEOUT_MS)
+		BeginReconnect();
+}
+
+void Versus::UpdateConnectionDialog()
+{
+	int aWanted = VERSUS_CONNECTION_DIALOG_NONE;
+	if (IsInMatch() && mReconnecting)
+		aWanted = VERSUS_CONNECTION_DIALOG_RECONNECTING;
+	else if (IsInMatch() && mOpponentDisconnected)
+		aWanted = VERSUS_CONNECTION_DIALOG_OPPONENT_AWAY;
+
+	if (aWanted == mConnectionDialog)
+		return;
+
+	// Showing the dialog pauses the board (LawnApp::NeedPauseGame asks IsConnectionPaused), and
+	// killing it resumes the board
+	mConnectionDialog = aWanted;
+	mApp->KillDialog(Dialogs::DIALOG_VERSUS_CONNECTION);
+	if (aWanted == VERSUS_CONNECTION_DIALOG_RECONNECTING)
+	{
+		mApp->DoDialog(Dialogs::DIALOG_VERSUS_CONNECTION, true, __S("CONNECTION LOST"),
+			__S("Trying to reconnect...\nThe game is paused for both players."), __S("Leave Match"), Dialog::BUTTONS_FOOTER);
+	}
+	else if (aWanted == VERSUS_CONNECTION_DIALOG_OPPONENT_AWAY)
+	{
+		mApp->DoDialog(Dialogs::DIALOG_VERSUS_CONNECTION, true, __S("PAUSED"),
+			__S("Your opponent lost their connection.\nWaiting for them to come back..."), __S("Leave Match"), Dialog::BUTTONS_FOOTER);
+	}
+
+	if (mApp->mBoard)
+		mApp->mBoard->Pause(aWanted != VERSUS_CONNECTION_DIALOG_NONE);
+}
+
+void Versus::SpawnZombie(Board* theBoard, ZombieType theZombieType, int theRow)
+{
+	TodTrace("Versus: received zombie %d in row %d", theZombieType, theRow);
+	theBoard->AddZombieInRow(theZombieType, theRow, 0);
+}
+
 void Versus::HandleGameData(const std::string& theData)
 {
-	if (theData.empty() || mState != VERSUS_STATE_PLAYING)
+	if (theData.empty() || !IsInMatch())
 		return;
 
 	Board* aBoard = mApp->mBoard;
@@ -386,14 +575,20 @@ void Versus::HandleGameData(const std::string& theData)
 	{
 		ByteReader aReader(theData);
 		aReader.U8();
+		int aSeq = aReader.U16();
+		if (aSeq <= mLastReceivedSeq)
+			break;
+		mLastReceivedSeq = aSeq;
 		ZombieType aZombieType = (ZombieType)aReader.U8();
 		int aRow = aReader.U8();
-		if (aReader.mOk && aBoard && mApp->mGameScene == GameScenes::SCENE_PLAYING &&
-			aZombieType >= 0 && aZombieType < ZombieType::NUM_ZOMBIE_TYPES && aBoard->RowCanHaveZombies(aRow))
-		{
-			TodTrace("Versus: received zombie %d in row %d", aZombieType, aRow);
-			aBoard->AddZombieInRow(aZombieType, aRow, 0);
-		}
+		if (!aReader.mOk || aZombieType < 0 || aZombieType >= ZombieType::NUM_ZOMBIE_TYPES || aRow < 0 || aRow >= 5)
+			break;
+
+		// Hold on to zombies that arrive before our level has started, or while we're paused
+		if (aBoard && mState == VERSUS_STATE_PLAYING && mApp->mGameScene == GameScenes::SCENE_PLAYING && !aBoard->mPaused)
+			SpawnZombie(aBoard, aZombieType, aRow);
+		else
+			mPendingZombies.push_back({ aZombieType, aRow });
 		break;
 	}
 
@@ -402,8 +597,35 @@ void Versus::HandleGameData(const std::string& theData)
 		break;
 
 	case VERSUS_MSG_LOST:
+	{
+		ByteReader aReader(theData);
+		aReader.U8();
+		int aSeq = aReader.U16();
+		if (aSeq <= mLastReceivedSeq)
+			break;
+		mLastReceivedSeq = aSeq;
 		EndMatch(VERSUS_RESULT_WON);
 		break;
+	}
+
+	case VERSUS_MSG_RESUME:
+	{
+		ByteReader aReader(theData);
+		aReader.U8();
+		int aLastSeen = aReader.U16();
+		int aResent = 0;
+		for (const std::vector<uint8_t>& aMessage : mSentReliable)
+		{
+			int aSeq = aMessage[1] | (aMessage[2] << 8);
+			if (aSeq > aLastSeen)
+			{
+				mConnection.SendBinary(aMessage);
+				aResent++;
+			}
+		}
+		TodTrace("Versus: opponent has up to %d, resent %d", aLastSeen, aResent);
+		break;
+	}
 	}
 }
 
@@ -412,12 +634,30 @@ void Versus::SendZombie(SeedType theSeedType, int theRow)
 	ZombieType aZombieType = Challenge::IZombieSeedTypeToZombieType(theSeedType);
 	ByteWriter aWriter;
 	aWriter.U8(VERSUS_MSG_ZOMBIE);
+	aWriter.U16(0);  // seq, filled in by SendReliable
 	aWriter.U8(aZombieType);
 	aWriter.U8(theRow);
-	mConnection.SendBinary(aWriter.mData);
+	SendReliable(aWriter.mData);
 
 	mIncome += Plant::GetCost(theSeedType, SeedType::SEED_NONE) / VERSUS_INCOME_PER_SEND_DIVISOR;
 	TodTrace("Versus: sent zombie %d to row %d, income now %d", aZombieType, theRow, mIncome);
+}
+
+void Versus::SendReliable(std::vector<uint8_t> theMessage)
+{
+	int aSeq = mNextSendSeq++;
+	theMessage[1] = aSeq & 0xFF;
+	theMessage[2] = (aSeq >> 8) & 0xFF;
+	mSentReliable.push_back(theMessage);
+	mConnection.SendBinary(theMessage);
+}
+
+void Versus::SendResume()
+{
+	ByteWriter aWriter;
+	aWriter.U8(VERSUS_MSG_RESUME);
+	aWriter.U16(mLastReceivedSeq);
+	mConnection.SendBinary(aWriter.mData);
 }
 
 void Versus::SendSnapshot(Board* theBoard)
@@ -612,7 +852,8 @@ void Versus::OnZombiesWon()
 
 	ByteWriter aWriter;
 	aWriter.U8(VERSUS_MSG_LOST);
-	mConnection.SendBinary(aWriter.mData);
+	aWriter.U16(0);
+	SendReliable(aWriter.mData);
 
 	// The board plays its "zombies ate your brains" cutscene first, then calls ShowResult()
 	mState = VERSUS_STATE_OVER;
@@ -626,6 +867,9 @@ void Versus::EndMatch(VersusResult theResult)
 
 	mState = VERSUS_STATE_OVER;
 	mResult = theResult;
+	mReconnecting = false;
+	mOpponentDisconnected = false;
+	UpdateConnectionDialog();
 	ShowResult();
 }
 

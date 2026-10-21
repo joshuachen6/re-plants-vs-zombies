@@ -8,7 +8,7 @@
 #include <emscripten/websocket.h>
 #endif
 
-VersusConnection::VersusConnection() : mSocket(0), mOpen(false)
+VersusConnection::VersusConnection() : mSocket(0), mOpen(false), mConnecting(false)
 {
 }
 
@@ -104,6 +104,7 @@ bool VersusConnection::Connect(const std::string& theUrl)
 		return false;
 
 	mSocket = aSocket;
+	mConnecting = true;
 	emscripten_websocket_set_onopen_callback(aSocket, this, OnSocketOpen);
 	emscripten_websocket_set_onmessage_callback(aSocket, this, OnSocketMessage);
 	emscripten_websocket_set_onclose_callback(aSocket, this, OnSocketClose);
@@ -123,6 +124,7 @@ void VersusConnection::Close()
 		mSocket = 0;
 	}
 	mOpen = false;
+	mConnecting = false;
 	mEvents.clear();
 }
 
@@ -158,6 +160,7 @@ bool VersusConnection::Connect(const std::string&)
 void VersusConnection::Close()
 {
 	mOpen = false;
+	mConnecting = false;
 	mEvents.clear();
 }
 

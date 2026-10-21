@@ -33,8 +33,42 @@ static GLuint gProgram;
 static GLuint gVbo;
 static GLint gUfViewMtx, gUfProjMtx, gUfTexture, gUfUseTexture;
 
+// Hidden pages get no animation frames, which normally just freezes the game. When the game asks to
+// keep running (Module.pvzKeepRunningHidden, set during Versus matches), a hidden page instead waits
+// for a tick from a worker, whose messages aren't throttled the way timers in hidden pages are.
 EM_ASYNC_JS(void, WaitForAnimationFrame, (), {
-	await new Promise(resolve => requestAnimationFrame(resolve));
+	await new Promise(resolve => {
+		if (!Module.pvzKeepRunningHidden) {
+			requestAnimationFrame(resolve);
+			return;
+		}
+
+		if (!Module.pvzTicker) {
+			const source = 'setInterval(() => postMessage(0), 16);';
+			Module.pvzTicker = new Worker(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })));
+			Module.pvzTickWaiters = [];
+			Module.pvzTicker.onmessage = () => {
+				if (!document.hidden) return;
+				const waiters = Module.pvzTickWaiters;
+				Module.pvzTickWaiters = [];
+				waiters.forEach(waiter => waiter());
+			};
+		}
+
+		let done = false;
+		const finish = () => {
+			if (done) return;
+			done = true;
+			document.removeEventListener('visibilitychange', finish);
+			resolve();
+		};
+		if (document.hidden) {
+			Module.pvzTickWaiters.push(finish);
+		} else {
+			requestAnimationFrame(finish);
+			document.addEventListener('visibilitychange', finish);  // hidden before the frame came
+		}
+	});
 });
 
 static void GfxBegin(GLenum vertexMode)

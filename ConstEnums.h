@@ -297,6 +297,7 @@ enum Dialogs
     DIALOG_PURCHASE_PACKET_SLOT,                // 50：升级卡槽的格子数量
     DIALOG_VERSUS,                              // Versus lobby (room code entry and matchmaking status)
     DIALOG_VERSUS_RESULT,                       // Versus match won, lost or abandoned
+    DIALOG_VERSUS_CONNECTION,                   // Versus game paused for a lost connection
     NUM_DIALOGS
 };
 enum DebugTextMode
