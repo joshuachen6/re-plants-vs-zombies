@@ -5049,7 +5049,7 @@ int Plant::GetCost(SeedType theSeedType, SeedType theImitaterType)
 {
     if (gLawnApp->IsVersusMode() && Challenge::IsZombieSeedType(theSeedType))
     {
-        return Versus::GetZombieCost(theSeedType);
+        return gLawnApp->mVersus->GetSendCost(theSeedType);
     }
 
     if (gLawnApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED || gLawnApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED_TWIST)

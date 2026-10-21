@@ -688,15 +688,19 @@ void Versus::HandleGameData(const std::string& theData)
 void Versus::SendZombie(SeedType theSeedType, int theRow)
 {
 	ZombieType aZombieType = Challenge::IZombieSeedTypeToZombieType(theSeedType);
-	ByteWriter aWriter;
-	aWriter.U8(VERSUS_MSG_ZOMBIE);
-	aWriter.U16(0);  // seq, filled in by SendReliable
-	aWriter.U8(aZombieType);
-	aWriter.U8(theRow);
-	SendReliable(aWriter.mData);
+	int aPackSize = GetPackSize();
+	for (int i = 0; i < aPackSize; i++)
+	{
+		ByteWriter aWriter;
+		aWriter.U8(VERSUS_MSG_ZOMBIE);
+		aWriter.U16(0);  // seq, filled in by SendReliable
+		aWriter.U8(aZombieType);
+		aWriter.U8(theRow);
+		SendReliable(aWriter.mData);
+	}
 
-	mIncome += Plant::GetCost(theSeedType, SeedType::SEED_NONE) / VERSUS_INCOME_PER_SEND_DIVISOR;
-	TodTrace("Versus: sent zombie %d to row %d, income now %d", aZombieType, theRow, mIncome);
+	mIncome += GetIncomeGain(GetSendCost(theSeedType));
+	TodTrace("Versus: sent %d x zombie %d to row %d, income now %d", aPackSize, aZombieType, theRow, mIncome);
 }
 
 void Versus::SendReliable(std::vector<uint8_t> theMessage)
@@ -1016,6 +1020,26 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 	TodTrace("Versus: natural wave %d, %d zombies", theWave, aCount);
 }
 
+int Versus::GetPackSize() const
+{
+	int aSize = 1;
+	for (const VersusPackStep& aStep : VERSUS_PACK_STEPS)
+	{
+		if (mWaveNumber >= aStep.mFromWave)
+			aSize = aStep.mSize;
+	}
+	return aSize;
+}
+
+// Each send raises income by up to cost / VERSUS_INCOME_PER_SEND_DIVISOR, less the closer income is
+// to VERSUS_MAX_INCOME
+int Versus::GetIncomeGain(int theCost) const
+{
+	int aRoom = std::max(VERSUS_MAX_INCOME - mIncome, 0);
+	int aGain = theCost * aRoom / (VERSUS_INCOME_PER_SEND_DIVISOR * VERSUS_MAX_INCOME);
+	return std::min(std::max(aGain, aRoom > 0 ? 1 : 0), aRoom);
+}
+
 int Versus::GetZombieUnlockWave(SeedType theSeedType)
 {
 	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
@@ -1026,8 +1050,9 @@ int Versus::GetZombieUnlockWave(SeedType theSeedType)
 	return 0;
 }
 
-// Darkens zombie packets that haven't unlocked yet and says which wave unlocks them
-void Versus::DrawLockedZombiePackets(Graphics* g)
+// Darkens zombie packets that haven't unlocked yet and says which wave unlocks them, and marks
+// sends that are packs of zombies
+void Versus::DrawZombiePacketOverlays(Graphics* g)
 {
 	Board* aBoard = mApp->mBoard;
 	if (aBoard == nullptr || !mZombiesChosen)
@@ -1037,10 +1062,20 @@ void Versus::DrawLockedZombiePackets(Graphics* g)
 	for (int i = VERSUS_NUM_PLANT_PACKETS; i < aSeedBank->mNumPackets; i++)
 	{
 		SeedPacket& aPacket = aSeedBank->mSeedPackets[i];
-		if (aPacket.mPacketType == SeedType::SEED_NONE || IsZombieUnlocked(aPacket.mPacketType))
+		if (aPacket.mPacketType == SeedType::SEED_NONE)
 			continue;
 
 		int aX = aSeedBank->mX + aPacket.mX, aY = aSeedBank->mY + aPacket.mY;
+		if (IsZombieUnlocked(aPacket.mPacketType))
+		{
+			if (GetPackSize() > 1)
+			{
+				TodDrawString(g, StrFormat(__S("x%d"), GetPackSize()), aX + SEED_PACKET_WIDTH - 4, aY + 20,
+					FONT_CONTINUUMBOLD14, Color(255, 230, 90), DrawStringJustification::DS_ALIGN_RIGHT);
+			}
+			continue;
+		}
+
 		g->SetColor(Color(0, 0, 0, 150));
 		g->FillRect(aX, aY, SEED_PACKET_WIDTH, SEED_PACKET_HEIGHT);
 		TodDrawString(g, StrFormat(__S("Wave %d"), GetZombieUnlockWave(aPacket.mPacketType)), aX + SEED_PACKET_WIDTH / 2, aY + 40,
@@ -1172,9 +1207,11 @@ void Versus::DrawWaveInfo(Graphics* g)
 		StrFormat(__S("Wave %d - next %ds"), mWaveNumber, aSecondsToNext);
 	Rect aRect = GetOpponentViewRect();
 	DrawCaption(g, aText, aRect.mY + aRect.mHeight + 28, Color(255, 255, 160));
+	if (GetPackSize() > 1)
+		DrawCaption(g, StrFormat(__S("Sends: packs of %d"), GetPackSize()), aRect.mY + aRect.mHeight + 44, Color(255, 230, 90));
 }
 
 void Versus::DrawIncome(Graphics* g)
 {
-	TodDrawString(g, StrFormat(__S("+%d"), mIncome), 34, 100, FONT_CONTINUUMBOLD14, Color(255, 255, 160), DrawStringJustification::DS_ALIGN_CENTER);
+	TodDrawString(g, StrFormat(mIncome >= VERSUS_MAX_INCOME ? __S("+%d max") : __S("+%d"), mIncome), 34, 100, FONT_CONTINUUMBOLD14, Color(255, 255, 160), DrawStringJustification::DS_ALIGN_CENTER);
 }

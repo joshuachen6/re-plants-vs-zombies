@@ -152,7 +152,7 @@ void ZombieChooserScreen::Draw(Graphics* g)
 			anInfo = StrFormat(__S("%s\n\nCan't be sent on the %s map."), aName.c_str(), gVersusMaps[mApp->mVersus->mMap].mName);
 		else
 			anInfo = StrFormat(__S("%s\n\nCosts %d sun\nRaises your income by %d\nCooldown %d seconds\n%s"),
-				aName.c_str(), aCost, aCost / VERSUS_INCOME_PER_SEND_DIVISOR, aOffer.mRefreshTime / 100,
+				aName.c_str(), aCost, mApp->mVersus->GetIncomeGain(aCost), aOffer.mRefreshTime / 100,
 				aOffer.mUnlockWave == 0 ? __S("Available from the start") : StrFormat(__S("Available from wave %d"), aOffer.mUnlockWave).c_str());
 	}
 	else

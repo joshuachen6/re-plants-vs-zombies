@@ -28,7 +28,8 @@ constexpr int VERSUS_NUM_ZOMBIE_OFFERS = 15;
 constexpr int VERSUS_STARTING_SUN = 250;			// a sunflower, a peashooter and a little spare
 constexpr int VERSUS_STARTING_INCOME = 25;			// sun paid out every VERSUS_INCOME_INTERVAL
 constexpr int VERSUS_INCOME_INTERVAL = 600;			// updates (100 per second)
-constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 8;	// sending a zombie raises income by cost / this, which pays back
+constexpr int VERSUS_MAX_INCOME = 250;				// income tapers off towards this, so late-game sun doesn't run away
+constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 8;	// sending a zombie raises income by up to cost / this, which pays back
 													// about as fast as a sunflower (50 sun for 25 every ~24 s)
 constexpr int VERSUS_SNAPSHOT_INTERVAL = 10;		// updates between board snapshots
 
@@ -38,6 +39,15 @@ constexpr int VERSUS_FIRST_WAVE_TIME = 2500;		// updates after "Ready, Set, Plan
 constexpr int VERSUS_WAVE_INTERVAL = 2500;			// updates between waves
 constexpr int VERSUS_HUGE_WAVE_EVERY = 5;			// every Nth wave is twice the size
 constexpr int VERSUS_MAX_ZOMBIES_PER_WAVE = 30;
+
+// Later in the match, each send is a pack of zombies at a multiple of the price: a sun sink for
+// the late game, and it keeps the pressure rising on both sides
+struct VersusPackStep
+{
+	int						mFromWave;
+	int						mSize;
+};
+constexpr VersusPackStep VERSUS_PACK_STEPS[] = { { 10, 2 }, { 18, 3 }, { 26, 4 } };
 
 // Connection: if nothing arrives from the server for a while (it answers our keepalive pings), the
 // connection is treated as lost. Both games then pause while this one tries to rejoin; the server
@@ -189,10 +199,13 @@ public:
 	void					OnZombiesWon();
 	void					ShowResult();
 	static int				GetZombieRefreshTime(SeedType theSeedType);
-	static int				GetZombieCost(SeedType theSeedType);
+	static int				GetZombieCost(SeedType theSeedType);	// for one zombie
+	int						GetPackSize() const;
+	int						GetSendCost(SeedType theSeedType) const { return GetZombieCost(theSeedType) * GetPackSize(); }
+	int						GetIncomeGain(int theCost) const;
 	static int				GetZombieUnlockWave(SeedType theSeedType);
 	bool					IsZombieUnlocked(SeedType theSeedType) const { return mWaveNumber >= GetZombieUnlockWave(theSeedType); }
-	void					DrawLockedZombiePackets(Sexy::Graphics* g);
+	void					DrawZombiePacketOverlays(Sexy::Graphics* g);
 	bool					IsZombieAllowedOnMap(ZombieType theZombieType) const;
 	static int				PickLane(Board* theBoard, ZombieType theZombieType, int theRow);
 

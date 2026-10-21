@@ -7751,7 +7751,7 @@ void Board::DrawUITop(Graphics* g)
 		{
 			mApp->mVersus->DrawIncome(g);
 			mApp->mVersus->DrawWaveInfo(g);
-			mApp->mVersus->DrawLockedZombiePackets(g);
+			mApp->mVersus->DrawZombiePacketOverlays(g);
 		}
 	}
 
