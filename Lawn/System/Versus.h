@@ -41,6 +41,9 @@ constexpr int VERSUS_FIRST_WAVE_TIME = 2500;		// updates after "Ready, Set, Plan
 constexpr int VERSUS_WAVE_INTERVAL = 2500;			// updates between waves
 constexpr int VERSUS_HUGE_WAVE_EVERY = 5;			// every Nth wave is twice the size
 constexpr int VERSUS_MAX_ZOMBIES_PER_WAVE = 30;
+constexpr int VERSUS_ZOMBIE_SPACING = 150;			// px between zombies spawned in the same lane, so one
+													// squash or cherry bomb can't take out a whole pack (zombies
+													// walk at slightly different speeds, so the gaps shrink a bit)
 
 // Sun producers work like farms in Bloons TD Battles: pricier than usual, and their sun drops grow as
 // they ripen, so they lose to eco early but out-earn it late (if they survive)
@@ -221,6 +224,7 @@ public:
 	void					DrawZombiePacketOverlays(Sexy::Graphics* g);
 	bool					IsZombieAllowedOnMap(ZombieType theZombieType) const;
 	static int				PickLane(Board* theBoard, ZombieType theZombieType, int theRow);
+	static void				AddSpacedZombie(Board* theBoard, ZombieType theZombieType, int theLane);
 
 	// Opponent view, drawn in the top bar
 	static Sexy::Rect		GetOpponentViewRect();

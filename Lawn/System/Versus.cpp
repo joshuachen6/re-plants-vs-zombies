@@ -617,7 +617,30 @@ void Versus::SpawnZombie(Board* theBoard, ZombieType theZombieType, int theRow)
 	int aLane = PickLane(theBoard, theZombieType, theRow);
 	TodTrace("Versus: received zombie %d for row %d, sent down row %d", theZombieType, theRow, aLane);
 	if (aLane >= 0)
-		theBoard->AddZombieInRow(theZombieType, aLane, 0);
+		AddSpacedZombie(theBoard, theZombieType, aLane);
+}
+
+// Adds a zombie at the right edge of a lane, pushed further right (to walk in behind) if it would
+// otherwise bunch up with the zombies already waiting there
+void Versus::AddSpacedZombie(Board* theBoard, ZombieType theZombieType, int theLane)
+{
+	float aRightmost = -1000.0f;
+	Zombie* anOther = nullptr;
+	while (theBoard->IterateZombies(anOther))
+	{
+		if (anOther->mRow == theLane && anOther->mZombieType != ZombieType::ZOMBIE_BUNGEE && !anOther->IsDeadOrDying())
+			aRightmost = std::max(aRightmost, anOther->mPosX);
+	}
+
+	Zombie* aZombie = theBoard->AddZombieInRow(theZombieType, theLane, 0);
+	if (aZombie == nullptr || theZombieType == ZombieType::ZOMBIE_BUNGEE)
+		return;  // bungees drop in from above
+
+	if (aZombie->mPosX < aRightmost + VERSUS_ZOMBIE_SPACING)
+	{
+		aZombie->mPosX = aRightmost + VERSUS_ZOMBIE_SPACING;
+		aZombie->mX = (int)aZombie->mPosX;
+	}
 }
 
 void Versus::HandleGameData(const std::string& theData)
@@ -987,7 +1010,7 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 	{
 		int aLane = PickLane(theBoard, ZombieType::ZOMBIE_FLAG, aRandom.Range(aNumLanes));
 		if (aLane >= 0)
-			theBoard->AddZombieInRow(ZombieType::ZOMBIE_FLAG, aLane, 0);
+			AddSpacedZombie(theBoard, ZombieType::ZOMBIE_FLAG, aLane);
 		aCount++;
 	}
 
@@ -1009,7 +1032,7 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 			{
 				int aLane = PickLane(theBoard, aZombie.mZombieType, aRandom.Range(aNumLanes));
 				if (aLane >= 0)
-					theBoard->AddZombieInRow(aZombie.mZombieType, aLane, 0);
+					AddSpacedZombie(theBoard, aZombie.mZombieType, aLane);
 				aPoints -= aZombie.mValue;
 				aCount++;
 				break;
