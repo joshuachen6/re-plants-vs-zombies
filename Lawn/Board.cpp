@@ -7743,6 +7743,7 @@ void Board::DrawUITop(Graphics* g)
 		if (mApp->mGameScene == GameScenes::SCENE_PLAYING)
 		{
 			mApp->mVersus->DrawIncome(g);
+			mApp->mVersus->DrawWaveInfo(g);
 		}
 	}
 

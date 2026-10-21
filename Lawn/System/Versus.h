@@ -28,12 +28,20 @@ constexpr int VERSUS_NUM_ZOMBIE_OFFERS = 15;
 constexpr int VERSUS_STARTING_SUN = 150;
 constexpr int VERSUS_STARTING_INCOME = 25;			// sun paid out every VERSUS_INCOME_INTERVAL
 constexpr int VERSUS_INCOME_INTERVAL = 600;			// updates (100 per second)
-constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 10;	// sending a zombie raises income by cost / this
+constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 15;	// sending a zombie raises income by cost / this
 constexpr int VERSUS_SNAPSHOT_INTERVAL = 10;		// updates between board snapshots
+
+// Natural waves: both lawns get the same zombies at the same time, generated from the seed the
+// server hands out at the start of the match (like the rounds in Bloons TD Battles)
+constexpr int VERSUS_FIRST_WAVE_TIME = 2500;		// updates after "Ready, Set, Plant!"
+constexpr int VERSUS_WAVE_INTERVAL = 2500;			// updates between waves
+constexpr int VERSUS_HUGE_WAVE_EVERY = 5;			// every Nth wave is twice the size
+constexpr int VERSUS_MAX_ZOMBIES_PER_WAVE = 30;
 
 struct VersusZombieOffer
 {
 	SeedType				mSeedType;
+	int						mCost;					// sun, replacing the I, Zombie puzzle prices
 	int						mRefreshTime;			// cooldown in updates, like Plant::GetRefreshTime
 };
 
@@ -85,6 +93,9 @@ public:
 	std::string				mStatus;				// shown in the lobby dialog
 	std::string				mJoinCode;				// empty when creating a room
 	std::string				mRoomCode;
+	uint32_t				mSeed;					// shared by both players, for the natural waves
+	int						mPlayTime;				// updates since the match started
+	int						mWaveNumber;			// natural waves spawned so far
 	bool					mOpponentReady;
 	bool					mGo;					// both players have picked seeds
 	bool					mZombiePacketsAdded;	// the seed bank has grown to hold the zombie packets
@@ -120,12 +131,14 @@ public:
 	void					OnZombiesWon();
 	void					ShowResult();
 	static int				GetZombieRefreshTime(SeedType theSeedType);
+	static int				GetZombieCost(SeedType theSeedType);
 
 	// Opponent view, drawn in the top bar
 	static Sexy::Rect		GetOpponentViewRect();
 	static int				OpponentViewRowAt(int theX, int theY);
 	void					DrawOpponentView(Sexy::Graphics* g);
 	void					DrawIncome(Sexy::Graphics* g);
+	void					DrawWaveInfo(Sexy::Graphics* g);
 
 private:
 	void					ResetMatch();
@@ -136,6 +149,8 @@ private:
 	void					EndMatch(VersusResult theResult);
 	void					SendSnapshot(Board* theBoard);
 	void					ReadSnapshot(const std::string& theData);
+	void					UpdateNaturalWaves(Board* theBoard);
+	void					SpawnNaturalWave(Board* theBoard, int theWave);
 };
 
 #endif

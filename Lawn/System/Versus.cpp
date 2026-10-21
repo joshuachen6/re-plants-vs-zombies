@@ -15,29 +15,69 @@
 #include "../../Sexy.TodLib/TodDebug.h"
 #include "ReanimationLawn.h"
 #include "graphics/Graphics.h"
+#include "graphics/Font.h"
 #include "widget/WidgetManager.h"
 
 #include <algorithm>
 #include <cstdlib>
 
-// Every zombie that can be sent, in the order the zombie chooser shows them. Costs come from the
-// I, Zombie puzzles (Plant::GetCost).
+// Every zombie that can be sent, in the order the zombie chooser shows them. Prices are roughly the
+// sun worth of plants it takes to stop each zombie, so sending isn't cheaper than defending.
 const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS] = {
-	{ SeedType::SEED_ZOMBIE_NORMAL,			300 },
-	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	500 },
-	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	500 },
-	{ SeedType::SEED_ZOMBIE_PAIL,			750 },
-	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	750 },
-	{ SeedType::SEED_ZOMBIE_LADDER,			750 },
-	{ SeedType::SEED_ZOMBIE_BALLOON,		750 },
-	{ SeedType::SEED_ZOMBIE_IMP,			300 },
-	{ SeedType::SEED_ZOMBIE_DIGGER,			1000 },
-	{ SeedType::SEED_ZOMBIE_BUNGEE,			1000 },
-	{ SeedType::SEED_ZOMBIE_POGO,			1000 },
-	{ SeedType::SEED_ZOMBIE_FOOTBALL,		1500 },
-	{ SeedType::SEED_ZOMBONI,				1500 },
-	{ SeedType::SEED_ZOMBIE_DANCER,			2000 },
-	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		3000 },
+	//  zombie							cost	cooldown
+	{ SeedType::SEED_ZOMBIE_NORMAL,			100,	400 },
+	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	175,	600 },
+	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	175,	600 },
+	{ SeedType::SEED_ZOMBIE_PAIL,			300,	900 },
+	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	275,	900 },
+	{ SeedType::SEED_ZOMBIE_LADDER,			300,	1000 },
+	{ SeedType::SEED_ZOMBIE_BALLOON,		300,	1000 },
+	{ SeedType::SEED_ZOMBIE_IMP,			75,		400 },
+	{ SeedType::SEED_ZOMBIE_DIGGER,			300,	1200 },
+	{ SeedType::SEED_ZOMBIE_BUNGEE,			250,	1200 },
+	{ SeedType::SEED_ZOMBIE_POGO,			350,	1200 },
+	{ SeedType::SEED_ZOMBIE_FOOTBALL,		450,	1800 },
+	{ SeedType::SEED_ZOMBONI,				450,	1800 },
+	{ SeedType::SEED_ZOMBIE_DANCER,			600,	2500 },
+	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		750,	3500 },
+};
+
+// Zombies the natural waves pick from: point value, first wave it can appear in, and pick weight
+struct VersusNaturalZombie
+{
+	ZombieType				mZombieType;
+	int						mValue;
+	int						mFirstWave;
+	int						mWeight;
+};
+
+static const VersusNaturalZombie gVersusNaturalZombies[] = {
+	{ ZombieType::ZOMBIE_NORMAL,		1,	1,	4000 },
+	{ ZombieType::ZOMBIE_TRAFFIC_CONE,	2,	3,	4000 },
+	{ ZombieType::ZOMBIE_POLEVAULTER,	2,	6,	2000 },
+	{ ZombieType::ZOMBIE_NEWSPAPER,		2,	7,	1000 },
+	{ ZombieType::ZOMBIE_PAIL,			4,	9,	3000 },
+	{ ZombieType::ZOMBIE_DOOR,			4,	12,	1000 },
+	{ ZombieType::ZOMBIE_FOOTBALL,		7,	16,	1000 },
+	{ ZombieType::ZOMBIE_DANCER,		5,	20,	500 },
+	{ ZombieType::ZOMBIE_GARGANTUAR,	10,	28,	500 },
+};
+
+// Points a natural wave spends on zombies (doubled for huge waves)
+static int NaturalWavePoints(int theWave)
+{
+	return 1 + theWave * 2 / 3;
+}
+
+// Small deterministic generator so both players roll the same waves from the shared seed
+class VersusWaveRandom
+{
+public:
+	uint32_t mState;
+
+	VersusWaveRandom(uint32_t theSeed, int theWave) : mState(theSeed * 2654435761u + (uint32_t)theWave * 40503u + 1u) { if (mState == 0) mState = 1; }
+	uint32_t Next() { mState ^= mState << 13; mState ^= mState >> 17; mState ^= mState << 5; return mState; }
+	int Range(int theMax) { return (int)(Next() % (uint32_t)theMax); }
 };
 
 // Binary messages, relayed untouched by the server. Multi-byte values are little-endian.
@@ -118,6 +158,15 @@ namespace
 		return theJson.substr(aPos, anEnd == std::string::npos ? std::string::npos : anEnd - aPos);
 	}
 
+	// A line of text under the opponent view, centred on it but kept on screen
+	void DrawCaption(Graphics* g, const SexyString& theText, int theY, const Color& theColor)
+	{
+		Rect aRect = Versus::GetOpponentViewRect();
+		int aWidth = FONT_BRIANNETOD12->StringWidth(theText);
+		int aX = std::min(aRect.mX + (aRect.mWidth - aWidth) / 2, BOARD_WIDTH - 14 - aWidth);
+		TodDrawString(g, theText, aX, theY, FONT_BRIANNETOD12, theColor, DrawStringJustification::DS_ALIGN_LEFT);
+	}
+
 	float OpponentViewX(float theBoardX)
 	{
 		return Versus::GetOpponentViewRect().mX + theBoardX * OPPONENT_VIEW_SCALE;
@@ -129,7 +178,7 @@ namespace
 	}
 }
 
-Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE), mZombieChooser(nullptr)
+Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE), mSeed(0), mZombieChooser(nullptr)
 {
 	ResetMatch();
 }
@@ -145,6 +194,8 @@ void Versus::ResetMatch()
 	mIncome = VERSUS_STARTING_INCOME;
 	mIncomeCounter = 0;
 	mSnapshotCounter = 0;
+	mPlayTime = 0;
+	mWaveNumber = 0;
 	mHasOpponentSnapshot = false;
 	mOpponentSun = 0;
 	mOpponentIncome = 0;
@@ -216,6 +267,9 @@ void Versus::Update()
 	if (mState != VERSUS_STATE_PLAYING || aBoard == nullptr || !mApp->IsVersusMode() || mApp->mGameScene != GameScenes::SCENE_PLAYING)
 		return;
 
+	mPlayTime++;
+	UpdateNaturalWaves(aBoard);
+
 	if (++mIncomeCounter >= VERSUS_INCOME_INTERVAL)
 	{
 		mIncomeCounter = 0;
@@ -258,6 +312,7 @@ void Versus::HandleControl(const std::string& theMessage)
 	}
 	else if (aType == "start")
 	{
+		mSeed = (uint32_t)strtoul(JsonField(theMessage, "seed").c_str(), nullptr, 10);
 		mState = VERSUS_STATE_CHOOSING_SEEDS;
 		mApp->KillDialog(Dialogs::DIALOG_VERSUS);
 		mApp->KillGameSelector();
@@ -594,6 +649,78 @@ void Versus::ShowResult()
 		mApp->mBoard->Pause(true);
 }
 
+void Versus::UpdateNaturalWaves(Board* theBoard)
+{
+	int aNextWaveTime = VERSUS_FIRST_WAVE_TIME + mWaveNumber * VERSUS_WAVE_INTERVAL;
+	bool aNextIsHuge = (mWaveNumber + 1) % VERSUS_HUGE_WAVE_EVERY == 0;
+
+	if (aNextIsHuge && mPlayTime == aNextWaveTime - 500)
+	{
+		theBoard->ClearAdviceImmediately();
+		theBoard->DisplayAdviceAgain(__S("[ADVICE_HUGE_WAVE]"), MessageStyle::MESSAGE_STYLE_HUGE_WAVE, AdviceType::ADVICE_HUGE_WAVE);
+		mApp->PlaySample(Sexy::SOUND_HUGE_WAVE);
+	}
+
+	if (mPlayTime >= aNextWaveTime)
+	{
+		mWaveNumber++;
+		SpawnNaturalWave(theBoard, mWaveNumber);
+		if (mWaveNumber == 1)
+			mApp->PlaySample(Sexy::SOUND_AWOOGA);
+	}
+}
+
+void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
+{
+	VersusWaveRandom aRandom(mSeed, theWave);
+	bool aHuge = theWave % VERSUS_HUGE_WAVE_EVERY == 0;
+	int aPoints = NaturalWavePoints(theWave) * (aHuge ? 2 : 1);
+	int aCount = 0;
+
+	if (aHuge)
+	{
+		theBoard->AddZombieInRow(ZombieType::ZOMBIE_FLAG, aRandom.Range(5), 0);
+		aCount++;
+	}
+
+	while (aPoints > 0 && aCount < VERSUS_MAX_ZOMBIES_PER_WAVE)
+	{
+		int aTotalWeight = 0;
+		for (const VersusNaturalZombie& aZombie : gVersusNaturalZombies)
+			if (theWave >= aZombie.mFirstWave && aZombie.mValue <= aPoints)
+				aTotalWeight += aZombie.mWeight;
+		if (aTotalWeight == 0)
+			break;
+
+		int aPick = aRandom.Range(aTotalWeight);
+		for (const VersusNaturalZombie& aZombie : gVersusNaturalZombies)
+		{
+			if (theWave < aZombie.mFirstWave || aZombie.mValue > aPoints)
+				continue;
+			if (aPick < aZombie.mWeight)
+			{
+				theBoard->AddZombieInRow(aZombie.mZombieType, aRandom.Range(5), 0);
+				aPoints -= aZombie.mValue;
+				aCount++;
+				break;
+			}
+			aPick -= aZombie.mWeight;
+		}
+	}
+
+	TodTrace("Versus: natural wave %d, %d zombies", theWave, aCount);
+}
+
+int Versus::GetZombieCost(SeedType theSeedType)
+{
+	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
+	{
+		if (anOffer.mSeedType == theSeedType)
+			return anOffer.mCost;
+	}
+	return 0;
+}
+
 int Versus::GetZombieRefreshTime(SeedType theSeedType)
 {
 	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
@@ -676,7 +803,17 @@ void Versus::DrawOpponentView(Graphics* g)
 	}
 
 	SexyString aCaption = mHasOpponentSnapshot ? StrFormat(__S("Opponent: %d (+%d)"), mOpponentSun, mOpponentIncome) : __S("Opponent");
-	TodDrawString(g, aCaption, aRect.mX + aRect.mWidth / 2, aRect.mY + aRect.mHeight + 12, FONT_BRIANNETOD12, Color(255, 255, 255), DrawStringJustification::DS_ALIGN_CENTER);
+	DrawCaption(g, aCaption, aRect.mY + aRect.mHeight + 12, Color(255, 255, 255));
+}
+
+void Versus::DrawWaveInfo(Graphics* g)
+{
+	int aSecondsToNext = (VERSUS_FIRST_WAVE_TIME + mWaveNumber * VERSUS_WAVE_INTERVAL - mPlayTime + 99) / 100;
+	SexyString aText = mWaveNumber == 0 ?
+		StrFormat(__S("Zombies in %ds"), aSecondsToNext) :
+		StrFormat(__S("Wave %d - next %ds"), mWaveNumber, aSecondsToNext);
+	Rect aRect = GetOpponentViewRect();
+	DrawCaption(g, aText, aRect.mY + aRect.mHeight + 28, Color(255, 255, 160));
 }
 
 void Versus::DrawIncome(Graphics* g)

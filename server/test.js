@@ -32,7 +32,7 @@ function next(ws) {
 const sendJson = (ws, msg) => ws.send(JSON.stringify(msg));
 
 async function main() {
-	const relay = await createRelay({ port: 0 });
+	const relay = await createRelay({ port: 0, log: () => {} });
 	try {
 		const a = await connect(relay.port);
 		const b = await connect(relay.port);

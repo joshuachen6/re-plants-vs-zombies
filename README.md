@@ -50,6 +50,8 @@ The web build adds a **Versus** button to the main menu: a head-to-head mode in 
 - The match starts for both players at the same moment, once both have finished choosing.
 - Your zombie packets sit on the right of the seed bank. Pick one up and click a lane in the opponent view (top right), or a row of your own lawn, to send that zombie down the same lane of your opponent's lawn.
 - There is no falling sun. Instead you get income every 6 seconds, and every zombie you send raises your income, so sending zombies is also how you grow your economy. Sunflowers still work.
+- Sent zombies cost about what the plants to stop them cost (a Normal zombie is 100 sun, a Buckethead 300, a Gargantuar 750).
+- Like the rounds in Bloons TD Battles, both lawns also get the same natural waves at the same time: the first 25 seconds in, then every 25 seconds, growing and adding tougher zombies as the match goes on. Every 5th wave is a huge wave.
 - The top-right view shows your opponent's lawn, sun and income, updated 10 times a second.
 - The first player whose lawn a zombie gets through loses. Lawnmowers work as usual. Leaving the match forfeits it.
 
@@ -60,7 +62,7 @@ cd server && npm install
 node relay.js --port 8787 --static ../build-web
 ```
 
-With `--static` the relay also serves the game, so opening `http://localhost:8787/` in two browser windows is enough to play locally. By default the game connects to `/versus` on the server it was loaded from; add `?server=ws://host:port` to the page URL to use a different relay. `server/deploy/` has a systemd unit and an nginx snippet for running the relay behind nginx. Run `npm test` in `server/` to test the relay. Balance values (income, zombie cooldowns) are constants at the top of `Lawn/System/Versus.h` and `Versus.cpp`.
+With `--static` the relay also serves the game, so opening `http://localhost:8787/` in two browser windows is enough to play locally. By default the game connects to `/versus` on the server it was loaded from; add `?server=ws://host:port` to the page URL to use a different relay. `server/deploy/` has a systemd unit and an nginx snippet for running the relay behind nginx. Run `npm test` in `server/` to test the relay. Balance values (income, zombie prices and cooldowns, wave timing and growth) are constants at the top of `Lawn/System/Versus.h` and `Versus.cpp`.
 
 Profiles and saved games are stored in the browser's IndexedDB. The web port lives in `SexyAppFramework/platform/web` (WebGL renderer, window, input), `web/` (page shell and filesystem setup) and `CMake/Emscripten.cmake`. Unlike the other platforms, the main loop runs under Asyncify so it can hand control back to the browser every frame, and resources load on the main thread instead of a loading thread.
 

@@ -23,7 +23,10 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 
-const HEARTBEAT_MS = 5000;
+// Clients are pinged this often and dropped after missing MAX_MISSED_PONGS replies in a row, so a
+// short network stall doesn't end a match
+const HEARTBEAT_MS = 15000;
+const MAX_MISSED_PONGS = 2;
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, they read like 1 and 0
 
 const MIME_TYPES = {
@@ -72,7 +75,8 @@ function serveStatic(staticDir, req, res) {
 	});
 }
 
-function createRelay({ port, host, staticDir }) {
+function createRelay({ port, host, staticDir, log = console.log }) {
+	let nextClientId = 1;
 	const rooms = new Map(); // code -> { players: [ws, ws?], ready: Set<ws> }
 
 	function send(ws, msg) {
@@ -107,6 +111,7 @@ function createRelay({ port, host, staticDir }) {
 				const code = newCode();
 				rooms.set(code, { players: [ws], ready: new Set() });
 				ws.room = code;
+				log(`client ${ws.id} created room ${code}`);
 				send(ws, { t: 'created', code });
 				break;
 			}
@@ -121,6 +126,7 @@ function createRelay({ port, host, staticDir }) {
 				leaveRoom(ws);
 				room.players.push(ws);
 				ws.room = code;
+				log(`client ${ws.id} joined room ${code}`);
 				send(ws, { t: 'joined', code });
 				send(room.players[0], { t: 'opponent_joined' });
 
@@ -152,10 +158,12 @@ function createRelay({ port, host, staticDir }) {
 	const server = http.createServer((req, res) => serveStatic(staticDir, req, res));
 	const wss = new WebSocketServer({ server });
 
-	wss.on('connection', ws => {
+	wss.on('connection', (ws, req) => {
+		ws.id = nextClientId++;
 		ws.room = null;
-		ws.alive = true;
-		ws.on('pong', () => { ws.alive = true; });
+		ws.missedPongs = 0;
+		ws.on('pong', () => { ws.missedPongs = 0; });
+		log(`client ${ws.id} connected from ${req.headers['x-real-ip'] || req.socket.remoteAddress}`);
 
 		ws.on('message', (data, isBinary) => {
 			if (isBinary) {
@@ -173,16 +181,20 @@ function createRelay({ port, host, staticDir }) {
 			handleControl(ws, msg);
 		});
 
-		ws.on('close', () => leaveRoom(ws));
+		ws.on('close', (code) => {
+			log(`client ${ws.id} disconnected (code ${code})${ws.room ? ` from room ${ws.room}` : ''}`);
+			leaveRoom(ws);
+		});
 	});
 
 	const heartbeat = setInterval(() => {
 		for (const ws of wss.clients) {
-			if (!ws.alive) {
+			if (ws.missedPongs >= MAX_MISSED_PONGS) {
+				log(`client ${ws.id} stopped answering pings`);
 				ws.terminate();
 				continue;
 			}
-			ws.alive = false;
+			ws.missedPongs++;
 			ws.ping();
 		}
 	}, HEARTBEAT_MS);
