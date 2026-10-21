@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "../../ConstEnums.h"
@@ -11,6 +12,7 @@
 
 class LawnApp;
 class Board;
+class Plant;
 class ZombieChooserScreen;
 namespace Sexy
 {
@@ -39,6 +41,14 @@ constexpr int VERSUS_FIRST_WAVE_TIME = 2500;		// updates after "Ready, Set, Plan
 constexpr int VERSUS_WAVE_INTERVAL = 2500;			// updates between waves
 constexpr int VERSUS_HUGE_WAVE_EVERY = 5;			// every Nth wave is twice the size
 constexpr int VERSUS_MAX_ZOMBIES_PER_WAVE = 30;
+
+// Sun producers work like farms in Bloons TD Battles: pricier than usual, and their sun drops grow as
+// they ripen, so they lose to eco early but out-earn it late (if they survive)
+constexpr int VERSUS_SUNFLOWER_COST = 125;
+constexpr int VERSUS_TWINSUNFLOWER_COST = 250;
+constexpr int VERSUS_SUNSHROOM_COST = 75;
+constexpr int VERSUS_FARM_RIPE_TIME = 12000;		// updates (2 min): drops become big suns (50)
+constexpr int VERSUS_FARM_FULL_TIME = 24000;		// updates (4 min): drops become a big sun and a sun (75)
 
 // Later in the match, each send is a pack of zombies at a multiple of the price: a sun sink for
 // the late game, and it keeps the pressure rising on both sides
@@ -162,6 +172,7 @@ public:
 	std::vector<VersusRemotePlant>	mOpponentPlants;
 	std::vector<VersusRemoteZombie>	mOpponentZombies;
 	std::vector<VersusPendingZombie>	mPendingZombies;	// sent before our level started
+	std::unordered_map<unsigned int, int>	mFarmFirstSun;	// sun producer id -> mPlayTime of its first drop
 
 	// Zombies sent and "I lost" are numbered, kept, and resent after a reconnect if the opponent
 	// says it missed them
@@ -200,6 +211,8 @@ public:
 	void					ShowResult();
 	static int				GetZombieRefreshTime(SeedType theSeedType);
 	static int				GetZombieCost(SeedType theSeedType);	// for one zombie
+	static int				GetFarmCost(SeedType theSeedType);		// 0 if it's not a sun producer
+	void					AddFarmSun(Plant* thePlant);
 	int						GetPackSize() const;
 	int						GetSendCost(SeedType theSeedType) const { return GetZombieCost(theSeedType) * GetPackSize(); }
 	int						GetIncomeGain(int theCost) const;

@@ -1028,7 +1028,11 @@ void Plant::UpdateProductionPlant()
         mLaunchCounter = RandRangeInt(mLaunchRate - 150, mLaunchRate);
         mApp->PlayFoley(FoleyType::FOLEY_SPAWN_SUN);
 
-        if (mSeedType == SeedType::SEED_SUNSHROOM)
+        if (mApp->IsVersusMode() && mSeedType != SeedType::SEED_MARIGOLD)
+        {
+            mApp->mVersus->AddFarmSun(this);  // sun producers ripen like farms in Versus
+        }
+        else if (mSeedType == SeedType::SEED_SUNSHROOM)
         {
             if (mState == PlantState::STATE_SUNSHROOM_SMALL)
             {
@@ -5050,6 +5054,12 @@ int Plant::GetCost(SeedType theSeedType, SeedType theImitaterType)
     if (gLawnApp->IsVersusMode() && Challenge::IsZombieSeedType(theSeedType))
     {
         return gLawnApp->mVersus->GetSendCost(theSeedType);
+    }
+    if (gLawnApp->IsVersusMode())
+    {
+        SeedType aFarmType = (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE) ? theImitaterType : theSeedType;
+        if (int aFarmCost = Versus::GetFarmCost(aFarmType))
+            return aFarmCost;
     }
 
     if (gLawnApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED || gLawnApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED_TWIST)

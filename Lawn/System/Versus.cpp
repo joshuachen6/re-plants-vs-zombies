@@ -238,6 +238,7 @@ void Versus::ResetMatch()
 	mOpponentPlants.clear();
 	mOpponentZombies.clear();
 	mPendingZombies.clear();
+	mFarmFirstSun.clear();
 	mNextSendSeq = 1;
 	mLastReceivedSeq = 0;
 	mSentReliable.clear();
@@ -1018,6 +1019,48 @@ void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
 	}
 
 	TodTrace("Versus: natural wave %d, %d zombies", theWave, aCount);
+}
+
+int Versus::GetFarmCost(SeedType theSeedType)
+{
+	switch (theSeedType)
+	{
+	case SeedType::SEED_SUNFLOWER:		return VERSUS_SUNFLOWER_COST;
+	case SeedType::SEED_TWINSUNFLOWER:	return VERSUS_TWINSUNFLOWER_COST;
+	case SeedType::SEED_SUNSHROOM:		return VERSUS_SUNSHROOM_COST;
+	default:							return 0;
+	}
+}
+
+// Drops a sun producer's sun, sized by how long it has been producing
+void Versus::AddFarmSun(Plant* thePlant)
+{
+	Board* aBoard = thePlant->mBoard;
+	unsigned int anId = aBoard->mPlants.DataArrayGetID(thePlant);
+	auto anEntry = mFarmFirstSun.emplace(anId, mPlayTime).first;
+	int anAge = mPlayTime - anEntry->second;
+
+	// A small sun-shroom hasn't grown up yet and keeps dropping small suns
+	if (thePlant->mSeedType == SeedType::SEED_SUNSHROOM && thePlant->mState == PlantState::STATE_SUNSHROOM_SMALL)
+	{
+		aBoard->AddCoin(thePlant->mX, thePlant->mY, CoinType::COIN_SMALLSUN, CoinMotion::COIN_MOTION_FROM_PLANT);
+		return;
+	}
+
+	int aDrops = thePlant->mSeedType == SeedType::SEED_TWINSUNFLOWER ? 2 : 1;
+	for (int i = 0; i < aDrops; i++)
+	{
+		if (anAge < VERSUS_FARM_RIPE_TIME)
+		{
+			aBoard->AddCoin(thePlant->mX, thePlant->mY, CoinType::COIN_SUN, CoinMotion::COIN_MOTION_FROM_PLANT);
+		}
+		else
+		{
+			aBoard->AddCoin(thePlant->mX, thePlant->mY, CoinType::COIN_LARGESUN, CoinMotion::COIN_MOTION_FROM_PLANT);
+			if (anAge >= VERSUS_FARM_FULL_TIME)
+				aBoard->AddCoin(thePlant->mX, thePlant->mY, CoinType::COIN_SUN, CoinMotion::COIN_MOTION_FROM_PLANT);
+		}
+	}
 }
 
 int Versus::GetPackSize() const
