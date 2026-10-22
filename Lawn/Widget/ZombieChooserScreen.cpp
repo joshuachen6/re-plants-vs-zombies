@@ -15,7 +15,7 @@
 
 #include <algorithm>
 
-static const Rect INFO_RECT(22, 290, 414, 230);
+static const Rect INFO_RECT(22, 340, 414, 192);	// below the three rows of zombies
 
 ZombieChooserScreen::ZombieChooserScreen(LawnApp* theApp)
 {

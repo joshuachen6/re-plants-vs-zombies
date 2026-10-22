@@ -435,6 +435,8 @@ void DrawSeedPacket(Graphics* g, float x, float y, SeedType theSeedType, SeedTyp
 	case SeedType::SEED_ZOMBIE_TRAFFIC_CONE:
 	case SeedType::SEED_ZOMBIE_PAIL:
 	case SeedType::SEED_ZOMBIE_DANCER:
+	case SeedType::SEED_ZOMBIE_NEWSPAPER:
+	case SeedType::SEED_ZOMBIE_JACK_IN_THE_BOX:
 		aScale = 0.35f;
 		aOffsetX = -3.0f;
 		aOffsetY = -7.0f;
@@ -448,6 +450,8 @@ void DrawSeedPacket(Graphics* g, float x, float y, SeedType theSeedType, SeedTyp
 
 	case SeedType::SEED_ZOMBIE_LADDER:
 	case SeedType::SEED_ZOMBIE_DIGGER:
+	case SeedType::SEED_ZOMBIE_SNORKEL:
+	case SeedType::SEED_ZOMBIE_DOLPHIN_RIDER:
 	case SeedType::SEED_ZOMBIE_SCREEN_DOOR:
 	case SeedType::SEED_ZOMBIE_POGO:
 		aScale = 0.35f;
@@ -480,6 +484,7 @@ void DrawSeedPacket(Graphics* g, float x, float y, SeedType theSeedType, SeedTyp
 		break;
 
 	case SeedType::SEED_ZOMBONI:
+	case SeedType::SEED_ZOMBIE_CATAPULT:
 		aScale = 0.23f;
 		aOffsetX = 12.0f;
 		aOffsetY = 3.0f;

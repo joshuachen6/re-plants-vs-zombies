@@ -4338,6 +4338,11 @@ ZombieType Challenge::IZombieSeedTypeToZombieType(SeedType theSeedType)
 	case SEED_ZOMBIE_DANCER:		return ZOMBIE_DANCER;
 	case SEED_ZOMBIE_GARGANTUAR:	return ZOMBIE_GARGANTUAR;
 	case SEED_ZOMBIE_IMP:			return ZOMBIE_IMP;
+	case SEED_ZOMBIE_NEWSPAPER:		return ZOMBIE_NEWSPAPER;
+	case SEED_ZOMBIE_SNORKEL:		return ZOMBIE_SNORKEL;
+	case SEED_ZOMBIE_DOLPHIN_RIDER:	return ZOMBIE_DOLPHIN_RIDER;
+	case SEED_ZOMBIE_JACK_IN_THE_BOX:	return ZOMBIE_JACK_IN_THE_BOX;
+	case SEED_ZOMBIE_CATAPULT:		return ZOMBIE_CATAPULT;
 	default:						TOD_ASSERT();
 	}
 
@@ -4839,7 +4844,12 @@ int Challenge::IsZombieSeedType(SeedType theSeedType)
 		theSeedType == SEED_ZOMBIE_POGO ||
 		theSeedType == SEED_ZOMBIE_DANCER ||
 		theSeedType == SEED_ZOMBIE_GARGANTUAR ||
-		theSeedType == SEED_ZOMBIE_IMP;
+		theSeedType == SEED_ZOMBIE_IMP ||
+		theSeedType == SEED_ZOMBIE_NEWSPAPER ||
+		theSeedType == SEED_ZOMBIE_SNORKEL ||
+		theSeedType == SEED_ZOMBIE_DOLPHIN_RIDER ||
+		theSeedType == SEED_ZOMBIE_JACK_IN_THE_BOX ||
+		theSeedType == SEED_ZOMBIE_CATAPULT;
 }
 
 //0x42B590

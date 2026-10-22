@@ -3675,6 +3675,12 @@ void Board::UpdateToolTip()
 	{
 		mToolTip->SetLabel(__S("[IMP]"));
 	}
+	else if (Challenge::IsZombieSeedType(aUseSeedType))
+	{
+		// the zombies only Versus can send
+		ZombieType aZombieType = Challenge::IZombieSeedTypeToZombieType(aUseSeedType);
+		mToolTip->SetLabel(TodStringTranslate(StrFormat(__S("[%s]"), GetZombieDefinition(aZombieType).mZombieName)));
+	}
 	else
 	{
 		// @Patoke: wrong function call

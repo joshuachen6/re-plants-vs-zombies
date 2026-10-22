@@ -49,21 +49,26 @@ const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS] = {
 	// can be sent before the first natural wave, which gives both players time to set up.
 	// The heaviest zombies cost you income instead of earning it, like MOAB-class sends.
 	//  zombie							cost	cooldown	unlock wave	income loss
-	{ SeedType::SEED_ZOMBIE_NORMAL,			100,	200,		1,			0 },
-	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	175,	300,		2,			0 },
-	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	175,	300,		3,			0 },
-	{ SeedType::SEED_ZOMBIE_PAIL,			300,	450,		4,			0 },
-	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	275,	450,		4,			0 },
-	{ SeedType::SEED_ZOMBIE_LADDER,			300,	500,		5,			0 },
-	{ SeedType::SEED_ZOMBIE_BALLOON,		300,	500,		5,			0 },
-	{ SeedType::SEED_ZOMBIE_IMP,			75,		200,		1,			0 },
-	{ SeedType::SEED_ZOMBIE_DIGGER,			300,	600,		6,			0 },
-	{ SeedType::SEED_ZOMBIE_BUNGEE,			250,	600,		6,			0 },
-	{ SeedType::SEED_ZOMBIE_POGO,			350,	600,		7,			0 },
-	{ SeedType::SEED_ZOMBIE_FOOTBALL,		450,	900,		7,			10 },
-	{ SeedType::SEED_ZOMBONI,				450,	900,		8,			10 },
-	{ SeedType::SEED_ZOMBIE_DANCER,			600,	1250,		9,			20 },
-	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		750,	1750,		11,			30 },
+	{ SeedType::SEED_ZOMBIE_NORMAL,			150,	200,		1,			0 },
+	{ SeedType::SEED_ZOMBIE_IMP,			115,	200,		1,			0 },
+	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	265,	300,		2,			0 },
+	{ SeedType::SEED_ZOMBIE_NEWSPAPER,		225,	300,		2,			0 },
+	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	265,	300,		3,			0 },
+	{ SeedType::SEED_ZOMBIE_SNORKEL,		225,	400,		3,			0 },	// pool maps only
+	{ SeedType::SEED_ZOMBIE_PAIL,			450,	450,		4,			0 },
+	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	415,	450,		4,			0 },
+	{ SeedType::SEED_ZOMBIE_LADDER,			450,	500,		5,			0 },
+	{ SeedType::SEED_ZOMBIE_BALLOON,		450,	500,		5,			0 },
+	{ SeedType::SEED_ZOMBIE_DOLPHIN_RIDER,	375,	500,		5,			0 },	// pool maps only
+	{ SeedType::SEED_ZOMBIE_DIGGER,			450,	600,		6,			0 },
+	{ SeedType::SEED_ZOMBIE_BUNGEE,			375,	600,		6,			0 },
+	{ SeedType::SEED_ZOMBIE_JACK_IN_THE_BOX,	400,	600,		6,			0 },
+	{ SeedType::SEED_ZOMBIE_POGO,			525,	600,		7,			0 },
+	{ SeedType::SEED_ZOMBIE_FOOTBALL,		675,	900,		7,			10 },
+	{ SeedType::SEED_ZOMBONI,				675,	900,		8,			10 },
+	{ SeedType::SEED_ZOMBIE_CATAPULT,		600,	900,		8,			10 },
+	{ SeedType::SEED_ZOMBIE_DANCER,			900,	1250,		9,			20 },
+	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		1125,	1750,		11,			30 },
 };
 
 const VersusMapInfo gVersusMaps[NUM_VERSUS_MAPS] = {
@@ -90,6 +95,9 @@ static const VersusNaturalZombie gVersusNaturalZombies[] = {
 	{ ZombieType::ZOMBIE_NEWSPAPER,		2,	7,	1000 },
 	{ ZombieType::ZOMBIE_PAIL,			4,	9,	3000 },
 	{ ZombieType::ZOMBIE_DOOR,			4,	12,	1000 },
+	{ ZombieType::ZOMBIE_SNORKEL,		3,	10,	1000 },
+	{ ZombieType::ZOMBIE_JACK_IN_THE_BOX,	3,	10,	1000 },
+	{ ZombieType::ZOMBIE_CATAPULT,		5,	18,	500 },
 	{ ZombieType::ZOMBIE_FOOTBALL,		7,	16,	1000 },
 	{ ZombieType::ZOMBIE_DANCER,		5,	20,	500 },
 	{ ZombieType::ZOMBIE_GARGANTUAR,	10,	28,	500 },
@@ -611,6 +619,9 @@ int Versus::PickLane(Board* theBoard, ZombieType theZombieType, int theRow)
 
 bool Versus::IsZombieAllowedOnMap(ZombieType theZombieType) const
 {
+	// Snorkel and dolphin zombies need water
+	if (Board::IsZombieTypePoolOnly(theZombieType))
+		return mMap == VERSUS_MAP_POOL || mMap == VERSUS_MAP_FOG;
 	// Nothing can dig through the roof, and dancers' backups rise out of the ground
 	if (mMap == VERSUS_MAP_ROOF)
 		return theZombieType != ZombieType::ZOMBIE_DIGGER && theZombieType != ZombieType::ZOMBIE_DANCER && theZombieType != ZombieType::ZOMBIE_ZAMBONI;

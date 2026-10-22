@@ -27,12 +27,12 @@ namespace Sexy
 // ---- Tuning -------------------------------------------------------------------------------------
 constexpr int VERSUS_NUM_PLANT_PACKETS = 6;
 constexpr int VERSUS_NUM_ZOMBIE_PACKETS = 4;			// picked from gVersusZombieOffers before the match
-constexpr int VERSUS_NUM_ZOMBIE_OFFERS = 15;
+constexpr int VERSUS_NUM_ZOMBIE_OFFERS = 20;
 constexpr int VERSUS_STARTING_SUN = 250;			// a sunflower, a peashooter and a little spare
 constexpr int VERSUS_STARTING_INCOME = 25;			// sun paid out every VERSUS_INCOME_INTERVAL
 constexpr int VERSUS_INCOME_INTERVAL = 600;			// updates (100 per second)
-constexpr int VERSUS_MAX_INCOME = 500;				// income tapers off towards this, so late-game sun doesn't run away
-constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 5;	// sending a zombie raises income by up to cost / this, which pays back
+constexpr int VERSUS_MAX_INCOME = 400;				// income tapers off towards this, so late-game sun doesn't run away
+constexpr int VERSUS_INCOME_PER_SEND_DIVISOR = 6;	// sending a zombie raises income by up to cost / this, which pays back
 													// about as fast as a sunflower (50 sun for 25 every ~24 s)
 constexpr int VERSUS_SNAPSHOT_INTERVAL = 10;		// updates between board snapshots
 
