@@ -88,6 +88,22 @@ struct VersusNaturalZombie
 	int						mWeight;
 };
 
+struct VersusEventInfo
+{
+	const SexyChar*			mName;
+	const SexyChar*			mDescription;
+	const SexyChar*			mShortDescription;		// shown under the opponent view while it lasts
+};
+static const VersusEventInfo gVersusEvents[NUM_VERSUS_EVENTS] = {
+	{ __S("SUN SHOWER!"),		__S("Extra sun falls from the sky"),			__S("extra sun") },
+	{ __S("GOLD RUSH!"),		__S("Zombies you kill drop double bounties"),	__S("double bounties") },
+	{ __S("ECO BOOM!"),			__S("Income pays out double"),					__S("double income") },
+	{ __S("ZOMBIE SALE!"),		__S("Sending zombies costs 30% less"),			__S("sends 30% off") },
+	{ __S("GARDEN SALE!"),		__S("Plants cost 30% less"),					__S("plants 30% off") },
+	{ __S("RAPID RECHARGE!"),	__S("Plant and zombie cooldowns are halved"),	__S("half cooldowns") },
+	{ __S("ZOMBIE RAGE!"),		__S("Sent zombies have 50% more health"),		__S("sends +50% health") },
+};
+
 static const VersusNaturalZombie gVersusNaturalZombies[] = {
 	{ ZombieType::ZOMBIE_NORMAL,		1,	1,	4000 },
 	{ ZombieType::ZOMBIE_TRAFFIC_CONE,	2,	3,	4000 },
@@ -240,6 +256,9 @@ void Versus::ResetMatch()
 	mSnapshotCounter = 0;
 	mPlayTime = 0;
 	mWaveNumber = 0;
+	mEvent = VERSUS_EVENT_NONE;
+	mLastEvent = VERSUS_EVENT_NONE;
+	mEventEndTime = 0;
 	mHasOpponentSnapshot = false;
 	mOpponentSun = 0;
 	mOpponentIncome = 0;
@@ -351,12 +370,13 @@ void Versus::Update()
 
 	mPlayTime++;
 	UpdateNaturalWaves(aBoard);
+	UpdateEvent(aBoard);
 	UpdateBounties(aBoard);
 
 	if (++mIncomeCounter >= VERSUS_INCOME_INTERVAL)
 	{
 		mIncomeCounter = 0;
-		aBoard->AddSunMoney(mIncome);
+		aBoard->AddSunMoney(IsEventActive(VERSUS_EVENT_ECO_BOOM) ? mIncome * 2 : mIncome);
 	}
 
 	if (++mSnapshotCounter >= VERSUS_SNAPSHOT_INTERVAL)
@@ -682,7 +702,7 @@ void Versus::UpdateBounties(Board* theBoard)
 		if (aZombie)
 		{
 			TodTrace("Versus: bounty of %d sun", anIt->second);
-			int aSun = anIt->second;
+			int aSun = anIt->second * (IsEventActive(VERSUS_EVENT_GOLD_RUSH) ? 2 : 1);
 			int aX = (int)aZombie->mPosX + 30, aY = (int)aZombie->mPosY + 30;
 			for (; aSun >= 50; aSun -= 50)
 				theBoard->AddCoin(aX, aY, CoinType::COIN_LARGESUN, CoinMotion::COIN_MOTION_FROM_PLANT);
@@ -1098,7 +1118,51 @@ void Versus::UpdateNaturalWaves(Board* theBoard)
 		SpawnNaturalWave(theBoard, mWaveNumber);
 		if (mWaveNumber == 1)
 			mApp->PlaySample(Sexy::SOUND_AWOOGA);
+		if (mWaveNumber >= VERSUS_EVENT_FIRST_WAVE && mWaveNumber % VERSUS_EVENT_EVERY == 0)
+			StartEvent(theBoard);
 	}
+}
+
+// Rolls the next lawn event from the shared seed (never the same one twice in a row), so both
+// players get the same event at the same wave
+void Versus::StartEvent(Board* theBoard)
+{
+	VersusWaveRandom aRandom(mSeed ^ 0x5EED5u, mWaveNumber);
+	int aPick = aRandom.Range(mLastEvent == VERSUS_EVENT_NONE ? NUM_VERSUS_EVENTS : NUM_VERSUS_EVENTS - 1);
+	if (mLastEvent != VERSUS_EVENT_NONE && aPick >= mLastEvent)
+		aPick++;
+
+	mEvent = mLastEvent = (VersusEvent)aPick;
+	mEventEndTime = mPlayTime + VERSUS_EVENT_DURATION;
+	const VersusEventInfo& anInfo = gVersusEvents[mEvent];
+	theBoard->ClearAdviceImmediately();
+	theBoard->DisplayAdvice(StrFormat(__S("%s\n%s for %d seconds"), anInfo.mName, anInfo.mDescription, VERSUS_EVENT_DURATION / 100),
+		MessageStyle::MESSAGE_STYLE_HINT_TALL_FAST, AdviceType::ADVICE_NONE);
+	mApp->PlaySample(mEvent == VERSUS_EVENT_ZOMBIE_RAGE ? Sexy::SOUND_THUNDER : Sexy::SOUND_PRIZE);
+	TodTrace("Versus: lawn event %d at wave %d", mEvent, mWaveNumber);
+}
+
+void Versus::UpdateEvent(Board* theBoard)
+{
+	if (mEvent == VERSUS_EVENT_NONE)
+		return;
+
+	if (mPlayTime >= mEventEndTime)
+	{
+		mEvent = VERSUS_EVENT_NONE;
+		return;
+	}
+
+	// Sun showers work on every map, night ones included
+	if (mEvent == VERSUS_EVENT_SUN_SHOWER && (mEventEndTime - mPlayTime) % VERSUS_SUN_SHOWER_INTERVAL == 0)
+		theBoard->AddCoin(RandRangeInt(100, 649), 60, CoinType::COIN_SUN, CoinMotion::COIN_MOTION_FROM_SKY);
+}
+
+int Versus::ApplySale(int theCost, VersusEvent theSale) const
+{
+	if (!IsEventActive(theSale))
+		return theCost;
+	return (theCost * (100 - VERSUS_SALE_PERCENT) / 100 + 2) / 5 * 5;  // round to 5s
 }
 
 void Versus::SpawnNaturalWave(Board* theBoard, int theWave)
@@ -1214,7 +1278,8 @@ int Versus::GetIncomeChange(SeedType theSeedType) const
 
 int Versus::GetToughnessPercent() const
 {
-	return std::clamp((mWaveNumber - VERSUS_TOUGHEN_FROM_WAVE + 1) * VERSUS_TOUGHEN_PERCENT_PER_WAVE, 0, VERSUS_TOUGHEN_MAX_PERCENT);
+	int aPercent = std::clamp((mWaveNumber - VERSUS_TOUGHEN_FROM_WAVE + 1) * VERSUS_TOUGHEN_PERCENT_PER_WAVE, 0, VERSUS_TOUGHEN_MAX_PERCENT);
+	return IsEventActive(VERSUS_EVENT_ZOMBIE_RAGE) ? aPercent + VERSUS_RAGE_PERCENT : aPercent;
 }
 
 // Each send raises income by up to cost / VERSUS_INCOME_PER_SEND_DIVISOR, less the closer income is
@@ -1415,6 +1480,18 @@ void Versus::DrawWaveInfo(Graphics* g)
 		aSends += StrFormat(aSends.empty() ? __S("Sends +%d%% health") : __S(", +%d%% health"), GetToughnessPercent());
 	if (!aSends.empty())
 		DrawCaption(g, aSends, aRect.mY + aRect.mHeight + 44, Color(255, 230, 90));
+
+	int anEventY = aRect.mY + aRect.mHeight + (aSends.empty() ? 44 : 60);
+	if (mEvent != VERSUS_EVENT_NONE)
+	{
+		SexyString aName = gVersusEvents[mEvent].mShortDescription;
+		DrawCaption(g, StrFormat(__S("Event: %s %ds"), aName.c_str(), (mEventEndTime - mPlayTime + 99) / 100), anEventY, Color(140, 220, 255));
+	}
+	else if (mWaveNumber > 0)
+	{
+		int aNextEventWave = std::max(VERSUS_EVENT_FIRST_WAVE, (mWaveNumber / VERSUS_EVENT_EVERY + 1) * VERSUS_EVENT_EVERY);
+		DrawCaption(g, StrFormat(__S("Next event: wave %d"), aNextEventWave), anEventY, Color(170, 200, 220));
+	}
 }
 
 void Versus::DrawIncome(Graphics* g)

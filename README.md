@@ -61,6 +61,7 @@ The web build adds a **Versus** button to the main menu: a head-to-head mode in 
 - The top-right view shows your opponent's lawn, sun and income, updated 10 times a second.
 - Each player has 3 brains, like lives in Bloons TD Battles: a zombie that gets past your lawnmowers eats one, and you lose when they're all gone. Lawnmowers work as usual. Leaving the match forfeits it.
 - Killing a zombie your opponent sent drops sun worth a quarter of what they paid for it, and natural-wave zombies drop a small sun, so spamming zombies into a strong defence feeds the defender.
+- Lawn events: from wave 3, every third wave rolls a random event that changes the rules on both lawns for 40 seconds: Sun Shower (extra sun falls, even at night), Gold Rush (double bounties), Eco Boom (double income), Zombie Sale or Garden Sale (sends or plants 30% off), Rapid Recharge (half cooldowns) or Zombie Rage (sent zombies have 50% more health). Both players get the same event, and the next one is never a repeat of the last.
 - Upgrade plants unlock as the waves go by too: Twin Sunflower from wave 4, Gatling Pea and Gold Magnet from 6, Gloom-shroom, Cattail and Spikerock from 8, Winter Melon from 10 and Cob Cannon from 12.
 - If a player's connection drops, both games pause while that game reconnects by itself. The server holds the player's spot for 60 seconds and nothing sent in the meantime is lost; after that, the opponent wins. A match also keeps running if its browser tab is in the background.
 

@@ -5051,7 +5051,18 @@ PlantDefinition& GetPlantDefinition(SeedType theSeedType)
 }
 
 //0x467B00
+static int GetBaseCost(SeedType theSeedType, SeedType theImitaterType);
+
 int Plant::GetCost(SeedType theSeedType, SeedType theImitaterType)
+{
+    int aCost = GetBaseCost(theSeedType, theImitaterType);
+    // Versus garden sales (zombie sales are applied by GetSendCost)
+    if (gLawnApp->IsVersusMode() && !Challenge::IsZombieSeedType(theSeedType))
+        aCost = gLawnApp->mVersus->ApplySale(aCost, VERSUS_EVENT_PLANT_SALE);
+    return aCost;
+}
+
+static int GetBaseCost(SeedType theSeedType, SeedType theImitaterType)
 {
     if (gLawnApp->IsVersusMode() && Challenge::IsZombieSeedType(theSeedType))
     {
@@ -5158,11 +5169,11 @@ int Plant::GetRefreshTime(SeedType theSeedType, SeedType theImitaterType)
     if (Challenge::IsZombieSeedType(theSeedType))
     {
         // Versus zombie packets have a cooldown so they can't be spammed
-        return gLawnApp->IsVersusMode() ? Versus::GetZombieRefreshTime(theSeedType) : 0;
+        return gLawnApp->IsVersusMode() ? Versus::GetZombieRefreshTime(theSeedType) * gLawnApp->mVersus->GetCooldownPercent() / 100 : 0;
     }
 
     // Versus halves cooldowns so the match is about what you buy and when
-    int aPercent = gLawnApp->IsVersusMode() ? VERSUS_PLANT_COOLDOWN_PERCENT : 100;
+    int aPercent = gLawnApp->IsVersusMode() ? VERSUS_PLANT_COOLDOWN_PERCENT * gLawnApp->mVersus->GetCooldownPercent() / 100 : 100;
     if (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE)
     {
         const PlantDefinition& aPlantDef = GetPlantDefinition(theImitaterType);

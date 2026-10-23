@@ -46,6 +46,27 @@ constexpr int VERSUS_ZOMBIE_SPACING = 150;			// px between zombies spawned in th
 													// squash or cherry bomb can't take out a whole pack (zombies
 													// walk at slightly different speeds, so the gaps shrink a bit)
 
+// Lawn events: from VERSUS_EVENT_FIRST_WAVE, every VERSUS_EVENT_EVERY waves a random event (rolled from
+// the shared seed, so both players get the same one) changes the rules for both lawns for a while
+enum VersusEvent
+{
+	VERSUS_EVENT_NONE = -1,
+	VERSUS_EVENT_SUN_SHOWER,
+	VERSUS_EVENT_GOLD_RUSH,
+	VERSUS_EVENT_ECO_BOOM,
+	VERSUS_EVENT_ZOMBIE_SALE,
+	VERSUS_EVENT_PLANT_SALE,
+	VERSUS_EVENT_RAPID_RECHARGE,
+	VERSUS_EVENT_ZOMBIE_RAGE,
+	NUM_VERSUS_EVENTS
+};
+constexpr int VERSUS_EVENT_FIRST_WAVE = 3;
+constexpr int VERSUS_EVENT_EVERY = 3;
+constexpr int VERSUS_EVENT_DURATION = 4000;			// updates (40 s)
+constexpr int VERSUS_SUN_SHOWER_INTERVAL = 200;		// a sun falls this often during a sun shower
+constexpr int VERSUS_SALE_PERCENT = 30;				// discount during zombie and garden sales
+constexpr int VERSUS_RAGE_PERCENT = 50;				// extra health of sent zombies during zombie rage
+
 // Brains work like lives: a zombie that gets past the lawnmowers eats one instead of ending the match
 constexpr int VERSUS_STARTING_BRAINS = 3;
 
@@ -200,6 +221,9 @@ public:
 	VersusMap				mMap;					// picked by the room's creator
 	int						mPlayTime;				// updates since the match started
 	int						mWaveNumber;			// natural waves spawned so far
+	VersusEvent				mEvent;					// the lawn event in effect, if any
+	VersusEvent				mLastEvent;
+	int						mEventEndTime;			// mPlayTime it ends at
 	bool					mOpponentReady;
 	bool					mGo;					// both players have picked seeds
 	bool					mZombiePacketsAdded;	// the seed bank has grown to hold the zombie packets
@@ -262,7 +286,10 @@ public:
 	static int				GetFarmCost(SeedType theSeedType);		// 0 if it's not a sun producer
 	void					AddFarmSun(Plant* thePlant);
 	int						GetPackSize() const;
-	int						GetSendCost(SeedType theSeedType) const { return GetZombieCost(theSeedType) * GetPackSize(); }
+	int						GetSendCost(SeedType theSeedType) const { return ApplySale(GetZombieCost(theSeedType) * GetPackSize(), VERSUS_EVENT_ZOMBIE_SALE); }
+	bool					IsEventActive(VersusEvent theEvent) const { return mEvent == theEvent; }
+	int						ApplySale(int theCost, VersusEvent theSale) const;
+	int						GetCooldownPercent() const { return IsEventActive(VERSUS_EVENT_RAPID_RECHARGE) ? 50 : 100; }
 	int						GetIncomeGain(int theCost) const;
 	int						GetIncomeChange(SeedType theSeedType) const;	// what sending one pack does to income
 	int						GetToughnessPercent() const;	// extra health of sent zombies
@@ -282,6 +309,8 @@ public:
 	void					DrawOpponentView(Sexy::Graphics* g);
 	void					DrawIncome(Sexy::Graphics* g);
 	void					DrawWaveInfo(Sexy::Graphics* g);
+	void					StartEvent(Board* theBoard);
+	void					UpdateEvent(Board* theBoard);
 
 private:
 	void					ResetMatch();
