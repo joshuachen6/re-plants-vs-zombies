@@ -115,7 +115,14 @@ constexpr VersusPackStep VERSUS_PACK_STEPS[] = { { 10, 2 }, { 18, 3 }, { 26, 4 }
 // connection is treated as lost. Both games then pause while this one tries to rejoin; the server
 // holds our spot for 60 s.
 constexpr int VERSUS_KEEPALIVE_MS = 2000;
-constexpr int VERSUS_SILENCE_TIMEOUT_MS = 15000;		// long enough to ride out a stalled tab or a wifi hiccup
+constexpr int VERSUS_SILENCE_TIMEOUT_MS = 15000;
+// The server owns the match clock and sends it 10 times a second. A game never runs its lawn past the
+// clock (plus this many updates of extrapolation between messages), and one that has fallen behind
+// fast-forwards, so both lawns stay on the same match time whatever happens to either connection.
+constexpr int VERSUS_CLOCK_LEAD = 30;
+constexpr int VERSUS_CATCH_UP_THRESHOLD = 20;		// updates behind before fast-forwarding
+constexpr int VERSUS_MAX_UPDATES_PER_FRAME = 8;		// fast-forward speed
+constexpr int VERSUS_WAITING_NOTICE_MS = 1000;		// held this long, the board says it's waiting		// long enough to ride out a stalled tab or a wifi hiccup
 constexpr int VERSUS_RECONNECT_INTERVAL_MS = 2000;
 constexpr int VERSUS_CONNECT_TIMEOUT_MS = 5000;
 constexpr int VERSUS_RECONNECT_GIVE_UP_MS = 55000;
@@ -195,6 +202,7 @@ struct VersusPendingZombie
 {
 	ZombieType				mZombieType;
 	int						mRow;
+	int						mTime;					// match time it was sent at; it arrives then on our lawn too
 };
 
 struct VersusRemoteZombie
@@ -258,6 +266,13 @@ public:
 	uint32_t				mNextConnectTime;
 	uint32_t				mConnectStartTime;
 	uint32_t				mLastReceiveTime;
+	int						mClockAt;				// last match time from the server, in updates
+	bool					mClockRunning;
+	uint32_t				mClockReceivedTick;
+	bool					mHold;					// our lawn has caught up with the clock and waits for it
+	uint32_t				mHoldStartTick;
+	bool					mSentPlaying;
+	bool					mCatchingUp;
 	uint32_t				mLastUpdateTick;		// for spotting a stalled game loop
 	uint32_t				mMaxUpdateGap;			// longest gap between updates since the last (re)join, in ms
 	const char*				mReconnectReason;		// reported to the server on rejoin, for diagnosing drops
@@ -273,6 +288,9 @@ public:
 	void					Update();
 	bool					IsMatchmaking() const { return mState == VERSUS_STATE_CONNECTING || mState == VERSUS_STATE_IN_LOBBY; }
 	bool					IsInMatch() const { return mState == VERSUS_STATE_CHOOSING_SEEDS || mState == VERSUS_STATE_PLAYING; }
+	bool					IsHoldingBoard() const { return mHold; }
+	int						GetUpdatesThisFrame() const;	// more than 1 while catching up with the clock
+	int						GetAllowedTime() const;
 	bool					IsConnectionPaused() const { return IsInMatch() && (mReconnecting || mOpponentDisconnected); }
 
 	// Hooks from the board and seed chooser
@@ -314,6 +332,7 @@ public:
 	void					DrawWaveInfo(Sexy::Graphics* g);
 	void					StartEvent(Board* theBoard);
 	void					UpdateEvent(Board* theBoard);
+	void					UpdateMatch(Board* theBoard);
 
 private:
 	void					ResetMatch();

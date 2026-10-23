@@ -12,6 +12,7 @@
 //     {"t":"ready"}                              {"t":"opponent_joined"}
 //     {"t":"leave"}                              {"t":"start","seed":123,"map":2}
 //     {"t":"ping"}                               {"t":"pong"}
+//     {"t":"playing"}                            {"t":"clock","at":1234,"run":1}  (10 times a second)
 //                                                {"t":"opponent_ready"}
 //                                                {"t":"go"}
 //                                                {"t":"opponent_disconnected"}  (they have a while to rejoin)
@@ -21,6 +22,10 @@
 //
 // A player whose connection drops mid-match keeps their spot for RECONNECT_GRACE_MS. Game data sent
 // to them meanwhile is queued and delivered when they rejoin with the token they were given.
+//
+// The server owns the match clock (in game updates, 100 a second). It starts once both games report
+// "playing" and runs only while both players are connected and keeping up; each game runs its lawn to
+// the clock and no further, so waves, events and sent zombies stay in step on both lawns.
 //
 // The room's creator picks the map (0 day, 1 night, 2 pool, 3 fog, 4 roof); the server only passes
 // it on.
@@ -45,6 +50,9 @@ const RECONNECT_GRACE_MS = 60000;
 // connection even if TCP hasn't noticed, so its opponent is told (and paused) straight away
 const MATCH_SILENCE_MS = 20000;
 const MAX_QUEUED_FRAMES = 2000;
+const CLOCK_INTERVAL_MS = 100;
+// The clock stops while a player's game hasn't been heard from for this long (they keep alive every 2 s)
+const CLOCK_QUIET_MS = 3500;
 const NUM_MAPS = 5;
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, they read like 1 and 0
 
@@ -99,7 +107,7 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 
 	// code -> room. A room has up to two player slots; a slot outlives its socket so a player who
 	// drops out can come back with their token.
-	//   room = { code, slots: [slot, slot?], ready: Set<slot>, started, seed, map }
+	//   room = { code, slots: [slot, slot?], ready: Set<slot>, started, seed, map, playing: Set<slot>, clock }
 	//   slot = { token, ws (null while disconnected), queue: [binary frames for it], graceTimer }
 	const rooms = new Map();
 
@@ -177,7 +185,8 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 				const code = newCode();
 				const slot = newSlot(ws);
 				const map = Number.isInteger(msg.map) && msg.map >= 0 && msg.map < NUM_MAPS ? msg.map : 0;
-				rooms.set(code, { code, slots: [slot], ready: new Set(), started: false, seed: 0, map });
+				rooms.set(code, { code, slots: [slot], ready: new Set(), started: false, seed: 0, map,
+					playing: new Set(), clock: { at: 0, running: false, lastMs: 0 } });
 				ws.room = code;
 				log(`client ${ws.id} created room ${code} (map ${map})`);
 				send(ws, { t: 'created', code, token: slot.token });
@@ -250,6 +259,10 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 				}
 				break;
 			}
+
+			case 'playing':
+				if (room && room.started && ws.slot) room.playing.add(ws.slot);
+				break;
 
 			case 'leave':
 				leaveCurrentRoom(ws);
@@ -332,9 +345,22 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 		}
 	}, 1000);
 
+	const clockTick = setInterval(() => {
+		const now = Date.now();
+		for (const room of rooms.values()) {
+			if (!room.started || room.playing.size < 2) continue;
+			const clock = room.clock;
+			if (clock.running) clock.at += (now - clock.lastMs) / 10;
+			clock.lastMs = now;
+			clock.running = room.slots.every(s => s.ws && s.ws.readyState === s.ws.OPEN && now - (s.ws.lastSeen || 0) < CLOCK_QUIET_MS);
+			for (const s of room.slots) sendToSlot(s, { t: 'clock', at: Math.floor(clock.at), run: clock.running ? 1 : 0 });
+		}
+	}, CLOCK_INTERVAL_MS);
+
 	wss.on('close', () => {
 		clearInterval(heartbeat);
 		clearInterval(silenceCheck);
+		clearInterval(clockTick);
 	});
 
 	return new Promise(resolve => {

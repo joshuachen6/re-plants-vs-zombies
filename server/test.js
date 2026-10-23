@@ -30,6 +30,15 @@ function next(ws) {
 }
 
 const sendJson = (ws, msg) => ws.send(JSON.stringify(msg));
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Waits for the next clock message, skipping anything else
+async function nextClock(ws) {
+	for (;;) {
+		const msg = await next(ws);
+		if (msg.t === 'clock') return msg;
+	}
+}
 
 async function main() {
 	const relay = await createRelay({ port: 0, log: () => {}, graceMs: 500 });
@@ -114,6 +123,35 @@ async function main() {
 		assert.deepStrictEqual(await next(a), { t: 'opponent_left' });
 		d.close();
 		a.close();
+
+		// The match clock starts once both games are playing, runs at 100 updates a second and stops
+		// while a player is gone
+		const e = await connect(relay.port);
+		const f = await connect(relay.port);
+		sendJson(e, { t: 'create' });
+		const room3 = await next(e);
+		sendJson(f, { t: 'join', code: room3.code });
+		sendJson(e, { t: 'ready' });
+		sendJson(f, { t: 'ready' });
+		await sleep(100);
+		sendJson(e, { t: 'playing' });
+		sendJson(f, { t: 'playing' });
+		const first = await nextClock(e);
+		await sleep(500);
+		e.inbox = e.inbox.filter(m => m.t !== 'clock');
+		const later = await nextClock(e);
+		assert.strictEqual(later.run, 1);
+		assert.ok(later.at - first.at >= 40 && later.at - first.at <= 80, `clock moved ${later.at - first.at} updates in ~0.5 s`);
+		f.terminate();  // the test relay only waits 500 ms for a rejoin, so check quickly
+		await sleep(150);
+		e.inbox = e.inbox.filter(m => m.t !== 'clock');
+		const stopped = await nextClock(e);
+		await sleep(150);
+		e.inbox = e.inbox.filter(m => m.t !== 'clock');
+		const stillStopped = await nextClock(e);
+		assert.strictEqual(stopped.run, 0);
+		assert.strictEqual(stillStopped.at, stopped.at);
+		e.close();
 
 		console.log('relay tests passed');
 	} finally {

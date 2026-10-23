@@ -141,7 +141,7 @@ public:
 };
 
 // Binary messages, relayed untouched by the server. Multi-byte values are little-endian.
-//   zombie   [1][seq u16][zombie type u8][row u8]
+//   zombie   [1][seq u16][zombie type u8][row u8][match time u32]
 //   snapshot [2][sun u16][income u16][mower bits u8][brains u8]
 //            [plant count u8] { [x i16][y i16][seed type u8] }
 //            [zombie count u8] { [id u16][zombie type u8][x i16][y i16][flags u8] }
@@ -274,6 +274,13 @@ void Versus::ResetMatch()
 	mOpponentZombies.clear();
 	mPendingZombies.clear();
 	mFarmFirstSun.clear();
+	mClockAt = 0;
+	mClockRunning = false;
+	mClockReceivedTick = 0;
+	mHold = false;
+	mHoldStartTick = 0;
+	mSentPlaying = false;
+	mCatchingUp = false;
 	mNextSendSeq = 1;
 	mLastReceivedSeq = 0;
 	mSentReliable.clear();
@@ -381,11 +388,64 @@ void Versus::Update()
 	// players' waves stay in step
 	Board* aBoard = mApp->mBoard;
 	if (mState != VERSUS_STATE_PLAYING || aBoard == nullptr || !mApp->IsVersusMode() || mApp->mGameScene != GameScenes::SCENE_PLAYING || aBoard->mPaused)
+	{
+		mHold = false;
+		return;
+	}
+
+	// The server starts the match clock once both lawns are up
+	if (!mSentPlaying && mConnection.IsOpen())
+	{
+		mSentPlaying = true;
+		mConnection.SendText("{\"t\":\"playing\"}");
+	}
+
+	// The board skipped this update too (Board::Update asks IsHoldingBoard)
+	bool aHeld = mHold;
+	mHold = mPlayTime + 1 > GetAllowedTime();
+	if (mHold && !aHeld)
+		mHoldStartTick = aTick;
+	if (aHeld)
 		return;
 
-	for (const VersusPendingZombie& aZombie : mPendingZombies)
-		SpawnZombie(aBoard, aZombie.mZombieType, aZombie.mRow);
-	mPendingZombies.clear();
+	UpdateMatch(aBoard);
+}
+
+int Versus::GetAllowedTime() const
+{
+	if (!mClockRunning || !mConnection.IsOpen())
+		return mClockAt;
+	return mClockAt + std::min((int)(SDL_GetTicks() - mClockReceivedTick) / 10, VERSUS_CLOCK_LEAD);
+}
+
+int Versus::GetUpdatesThisFrame() const
+{
+	if (mState != VERSUS_STATE_PLAYING)
+		return 1;
+	int aBehind = GetAllowedTime() - mPlayTime;
+	if (aBehind <= VERSUS_CATCH_UP_THRESHOLD)
+		return 1;
+	return std::min(1 + aBehind / 10, VERSUS_MAX_UPDATES_PER_FRAME);
+}
+
+void Versus::UpdateMatch(Board* aBoard)
+{
+	bool aCatchingUp = GetUpdatesThisFrame() > 1;
+	if (aCatchingUp && !mCatchingUp)
+		TodTrace("Versus: %d updates behind the match clock, catching up", GetAllowedTime() - mPlayTime);
+	mCatchingUp = aCatchingUp;
+
+	// Sent zombies arrive at the match time they were sent at (straight away, unless we're behind)
+	for (auto anIt = mPendingZombies.begin(); anIt != mPendingZombies.end(); )
+	{
+		if (anIt->mTime > mPlayTime)
+		{
+			++anIt;
+			continue;
+		}
+		SpawnZombie(aBoard, anIt->mZombieType, anIt->mRow);
+		anIt = mPendingZombies.erase(anIt);
+	}
 
 	mPlayTime++;
 	UpdateNaturalWaves(aBoard);
@@ -414,6 +474,14 @@ void Versus::Update()
 void Versus::HandleControl(const std::string& theMessage)
 {
 	std::string aType = JsonField(theMessage, "t");
+
+	if (aType == "clock")
+	{
+		mClockAt = std::max(mClockAt, atoi(JsonField(theMessage, "at").c_str()));
+		mClockRunning = JsonField(theMessage, "run") == "1";
+		mClockReceivedTick = SDL_GetTicks();
+		return;
+	}
 
 	if (aType == "pong")
 	{
@@ -799,14 +867,13 @@ void Versus::HandleGameData(const std::string& theData)
 		mLastReceivedSeq = aSeq;
 		ZombieType aZombieType = (ZombieType)aReader.U8();
 		int aRow = aReader.U8();
+		int aTime = aReader.U16();
+		aTime |= aReader.U16() << 16;
 		if (!aReader.mOk || aZombieType < 0 || aZombieType >= ZombieType::NUM_ZOMBIE_TYPES || aRow < 0 || aRow >= MAX_GRID_SIZE_Y)
 			break;
 
-		// Hold on to zombies that arrive before our level has started, or while we're paused
-		if (aBoard && mState == VERSUS_STATE_PLAYING && mApp->mGameScene == GameScenes::SCENE_PLAYING && !aBoard->mPaused)
-			SpawnZombie(aBoard, aZombieType, aRow);
-		else
-			mPendingZombies.push_back({ aZombieType, aRow });
+		// Spawned by UpdateMatch once our lawn reaches the match time it was sent at
+		mPendingZombies.push_back({ aZombieType, aRow, aTime });
 		break;
 	}
 
@@ -860,6 +927,8 @@ void Versus::SendZombie(SeedType theSeedType, int theRow)
 		aWriter.U16(0);  // seq, filled in by SendReliable
 		aWriter.U8(aZombieType);
 		aWriter.U8(theRow);
+		aWriter.U16(mPlayTime & 0xFFFF);
+		aWriter.U16((mPlayTime >> 16) & 0xFFFF);
 		SendReliable(aWriter.mData);
 	}
 
@@ -1516,6 +1585,13 @@ void Versus::DrawWaveInfo(Graphics* g)
 
 void Versus::DrawIncome(Graphics* g)
 {
+	// The lawn is held at the match clock, which the server stops while the opponent's game isn't keeping up
+	if (mHold && !IsConnectionPaused() && SDL_GetTicks() - mHoldStartTick >= VERSUS_WAITING_NOTICE_MS)
+	{
+		TodDrawString(g, __S("Waiting for your opponent..."), BOARD_WIDTH / 2, BOARD_HEIGHT / 2, FONT_DWARVENTODCRAFT18YELLOW, Color::White,
+			DrawStringJustification::DS_ALIGN_CENTER);
+	}
+
 	TodDrawString(g, StrFormat(mIncome >= VERSUS_MAX_INCOME ? __S("+%d max") : __S("+%d"), mIncome), 34, 100, FONT_CONTINUUMBOLD14, Color(255, 255, 160), DrawStringJustification::DS_ALIGN_CENTER);
 	TodDrawString(g, StrFormat(mBrains == 1 ? __S("%d brain") : __S("%d brains"), mBrains), 62, 100, FONT_BRIANNETOD12,
 		mBrains == 1 ? Color(255, 90, 90) : Color(255, 200, 200), DrawStringJustification::DS_ALIGN_LEFT);

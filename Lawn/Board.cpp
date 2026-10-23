@@ -6001,6 +6001,12 @@ void Board::Update()
 		return;
 	}
 
+	// Versus: the lawn has caught up with the server's match clock and waits for it
+	if (mApp->IsVersusMode() && mApp->mVersus->IsHoldingBoard())
+	{
+		return;
+	}
+
 	bool aDisabled = !CanInteractWithBoardButtons() || mIgnoreMouseUp;
 	if (!mMenuButton->mBtnNoDraw)
 	{

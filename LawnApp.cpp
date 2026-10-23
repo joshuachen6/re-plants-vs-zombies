@@ -1698,6 +1698,10 @@ void LawnApp::UpdateFrames()
 	{
 		aUpdateCount = 20;
 	}
+	else if (IsVersusMode())
+	{
+		aUpdateCount = mVersus->GetUpdatesThisFrame();  // fast-forwards a lawn that fell behind the match clock
+	}
 
 	for (int i = 0; i < aUpdateCount; i++)
 	{
