@@ -30,8 +30,12 @@
 EM_JS(void, SetKeepRunningHiddenJS, (int theKeepRunning), {
 	Module.pvzKeepRunningHidden = !!theKeepRunning;
 });
+EM_JS(int, IsPageHiddenJS, (), {
+	return document.hidden ? 1 : 0;
+});
 #else
 static void SetKeepRunningHiddenJS(int) {}
+static int IsPageHiddenJS() { return 0; }
 #endif
 
 enum VersusConnectionDialog
@@ -238,7 +242,7 @@ namespace
 }
 
 Versus::Versus(LawnApp* theApp) : mApp(theApp), mState(VERSUS_STATE_OFF), mResult(VERSUS_RESULT_NONE), mSeed(0), mMap(VERSUS_MAP_DAY), mZombieChooser(nullptr),
-	mConnectionDialog(VERSUS_CONNECTION_DIALOG_NONE), mKeepRunningHidden(false)
+	mConnectionDialog(VERSUS_CONNECTION_DIALOG_NONE), mKeepRunningHidden(false), mLastUpdateTick(0), mMaxUpdateGap(0), mReconnectReason(nullptr)
 {
 	ResetMatch();
 }
@@ -315,6 +319,17 @@ void Versus::Cancel()
 
 void Versus::Update()
 {
+	uint32_t aTick = SDL_GetTicks();
+	if (mLastUpdateTick != 0)
+	{
+		mMaxUpdateGap = std::max(mMaxUpdateGap, aTick - mLastUpdateTick);
+		// After the game loop itself stalls (a hidden or busy tab), messages that arrived meanwhile may
+		// not have been delivered yet, so don't mistake the stall for a dead connection
+		if (aTick - mLastUpdateTick >= 1000)
+			mLastReceiveTime = aTick;
+	}
+	mLastUpdateTick = aTick;
+
 	VersusConnection::Event anEvent;
 	while (mState != VERSUS_STATE_OFF && mConnection.Poll(anEvent))
 	{
@@ -324,7 +339,11 @@ void Versus::Update()
 			mLastReceiveTime = SDL_GetTicks();
 			if (mReconnecting)
 			{
-				mConnection.SendText("{\"t\":\"rejoin\",\"code\":\"" + mRoomCode + "\",\"token\":\"" + mToken + "\"}");
+				// why and how long the game loop stalled go in the server log, to tell network drops from
+				// a browser pausing the game
+				mConnection.SendText(StrFormat("{\"t\":\"rejoin\",\"code\":\"%s\",\"token\":\"%s\",\"why\":\"%s\",\"gap\":%u,\"hidden\":%d}",
+					mRoomCode.c_str(), mToken.c_str(), mReconnectReason ? mReconnectReason : "", mMaxUpdateGap, IsPageHiddenJS()));
+				mMaxUpdateGap = 0;
 				break;
 			}
 			if (mJoinCode.empty())
@@ -514,7 +533,7 @@ void Versus::HandleDisconnect()
 		if (mReconnecting)
 			mConnection.Close();  // this attempt failed; UpdateConnection tries again
 		else
-			BeginReconnect();
+			BeginReconnect("closed");
 		break;
 
 	default:
@@ -522,9 +541,10 @@ void Versus::HandleDisconnect()
 	}
 }
 
-void Versus::BeginReconnect()
+void Versus::BeginReconnect(const char* theReason)
 {
-	TodTrace("Versus: connection lost, reconnecting");
+	TodTrace("Versus: connection lost (%s), reconnecting", theReason);
+	mReconnectReason = theReason;
 	mConnection.Close();
 	mReconnecting = true;
 	uint32_t aNow = SDL_GetTicks();
@@ -573,7 +593,7 @@ void Versus::UpdateConnection()
 	// The server answers every keepalive, so a long silence means the connection is dead even if the
 	// browser hasn't noticed yet
 	if ((int)(aNow - mLastReceiveTime) >= VERSUS_SILENCE_TIMEOUT_MS)
-		BeginReconnect();
+		BeginReconnect("silence");
 }
 
 void Versus::UpdateConnectionDialog()

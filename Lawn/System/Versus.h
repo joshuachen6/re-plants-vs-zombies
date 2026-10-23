@@ -115,7 +115,7 @@ constexpr VersusPackStep VERSUS_PACK_STEPS[] = { { 10, 2 }, { 18, 3 }, { 26, 4 }
 // connection is treated as lost. Both games then pause while this one tries to rejoin; the server
 // holds our spot for 60 s.
 constexpr int VERSUS_KEEPALIVE_MS = 2000;
-constexpr int VERSUS_SILENCE_TIMEOUT_MS = 6000;
+constexpr int VERSUS_SILENCE_TIMEOUT_MS = 15000;		// long enough to ride out a stalled tab or a wifi hiccup
 constexpr int VERSUS_RECONNECT_INTERVAL_MS = 2000;
 constexpr int VERSUS_CONNECT_TIMEOUT_MS = 5000;
 constexpr int VERSUS_RECONNECT_GIVE_UP_MS = 55000;
@@ -258,6 +258,9 @@ public:
 	uint32_t				mNextConnectTime;
 	uint32_t				mConnectStartTime;
 	uint32_t				mLastReceiveTime;
+	uint32_t				mLastUpdateTick;		// for spotting a stalled game loop
+	uint32_t				mMaxUpdateGap;			// longest gap between updates since the last (re)join, in ms
+	const char*				mReconnectReason;		// reported to the server on rejoin, for diagnosing drops
 	uint32_t				mLastKeepaliveTime;
 	int						mConnectionDialog;		// which connection message is showing, if any
 	bool					mKeepRunningHidden;
@@ -318,7 +321,7 @@ private:
 	void					HandleControl(const std::string& theMessage);
 	void					HandleGameData(const std::string& theData);
 	void					HandleDisconnect();
-	void					BeginReconnect();
+	void					BeginReconnect(const char* theReason);
 	void					UpdateConnection();
 	void					UpdateConnectionDialog();
 	void					SpawnZombie(Board* theBoard, ZombieType theZombieType, int theRow);

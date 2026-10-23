@@ -43,7 +43,7 @@ const MAX_MISSED_PONGS = 2;
 const RECONNECT_GRACE_MS = 60000;
 // Games send a keepalive every 2 s during a match; one that goes quiet this long has lost its
 // connection even if TCP hasn't noticed, so its opponent is told (and paused) straight away
-const MATCH_SILENCE_MS = 6000;
+const MATCH_SILENCE_MS = 20000;
 const MAX_QUEUED_FRAMES = 2000;
 const NUM_MAPS = 5;
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, they read like 1 and 0
@@ -223,7 +223,10 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 				ws.room = code;
 
 				const other = otherSlot(target, slot);
-				log(`client ${ws.id} rejoined room ${code}`);
+				// the game reports why it reconnected and its longest stall, to tell network drops apart
+				// from a browser pausing the game
+				const why = typeof msg.why === 'string' ? msg.why.replace(/[^a-z]/g, '').slice(0, 16) : '';
+				log(`client ${ws.id} rejoined room ${code}` + (why ? ` (${why}, longest stall ${Number(msg.gap) | 0} ms${msg.hidden ? ', page hidden' : ''})` : ''));
 				send(ws, {
 					t: 'rejoined',
 					code,
@@ -323,7 +326,7 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 		for (const ws of wss.clients) {
 			const room = ws.room && rooms.get(ws.room);
 			if (ws.sendsKeepalives && room && room.slots.length === 2 && now - ws.lastSeen > MATCH_SILENCE_MS) {
-				log(`client ${ws.id} went quiet`);
+				log(`client ${ws.id} went quiet for ${now - ws.lastSeen} ms`);
 				ws.terminate();
 			}
 		}
