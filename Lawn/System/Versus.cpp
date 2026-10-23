@@ -1420,6 +1420,6 @@ void Versus::DrawWaveInfo(Graphics* g)
 void Versus::DrawIncome(Graphics* g)
 {
 	TodDrawString(g, StrFormat(mIncome >= VERSUS_MAX_INCOME ? __S("+%d max") : __S("+%d"), mIncome), 34, 100, FONT_CONTINUUMBOLD14, Color(255, 255, 160), DrawStringJustification::DS_ALIGN_CENTER);
-	TodDrawString(g, StrFormat(mBrains == 1 ? __S("%d brain") : __S("%d brains"), mBrains), 6, 118, FONT_BRIANNETOD12,
+	TodDrawString(g, StrFormat(mBrains == 1 ? __S("%d brain") : __S("%d brains"), mBrains), 62, 100, FONT_BRIANNETOD12,
 		mBrains == 1 ? Color(255, 90, 90) : Color(255, 200, 200), DrawStringJustification::DS_ALIGN_LEFT);
 }

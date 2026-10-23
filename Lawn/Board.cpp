@@ -5452,7 +5452,6 @@ void Board::UpdateSunSpawning()
 		mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM || 
 		mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_LAST_STAND || 
 		mApp->IsIZombieLevel() ||
-		mApp->IsVersusMode() ||  // income replaces falling sun
 		mApp->IsScaryPotterLevel() || 
 		mApp->IsSquirrelLevel() || 
 		HasConveyorBeltSeedBank() || 
@@ -5472,7 +5471,10 @@ void Board::UpdateSunSpawning()
 		return;
 
 	mNumSunsFallen++;
-	mSunCountDown = std::min(SUN_COUNTDOWN_MAX, SUN_COUNTDOWN + mNumSunsFallen * 10) + Rand(SUN_COUNTDOWN_RANGE);
+	if (mApp->IsVersusMode())
+		mSunCountDown = VERSUS_SKY_SUN_INTERVAL + Rand(VERSUS_SKY_SUN_RANDOM);  // steady, and more often than usual
+	else
+		mSunCountDown = std::min(SUN_COUNTDOWN_MAX, SUN_COUNTDOWN + mNumSunsFallen * 10) + Rand(SUN_COUNTDOWN_RANGE);
 	CoinType aSunType = mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_SUNNY_DAY ? CoinType::COIN_LARGESUN : CoinType::COIN_SUN;
 	AddCoin(RandRangeInt(100, 649), 60, aSunType, CoinMotion::COIN_MOTION_FROM_SKY);
 }

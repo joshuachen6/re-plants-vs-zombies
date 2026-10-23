@@ -136,6 +136,8 @@ void Plant::PlantInitialize(int theGridX, int theGridY, SeedType theSeedType, Se
     mOnBungeeState = PlantOnBungeeState::NOT_ON_BUNGEE;
     mPottedPlantIndex = -1;
     mLaunchRate = aPlantDef.mLaunchRate;
+    if (mApp->IsVersusMode() && MakesSun())
+        mLaunchRate = mLaunchRate * VERSUS_SUN_PRODUCTION_PERCENT / 100;
     mSubclass = aPlantDef.mSubClass;
     mRenderOrder = CalcRenderOrder();
 

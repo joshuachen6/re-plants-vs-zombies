@@ -75,6 +75,9 @@ constexpr VersusPlantUnlock VERSUS_PLANT_UNLOCKS[] = {
 constexpr int VERSUS_SUNFLOWER_COST = 125;
 constexpr int VERSUS_TWINSUNFLOWER_COST = 250;
 constexpr int VERSUS_SUNSHROOM_COST = 75;
+constexpr int VERSUS_SUN_PRODUCTION_PERCENT = 70;	// sun producers drop sun this much of the normal time apart
+constexpr int VERSUS_SKY_SUN_INTERVAL = 500;		// updates between suns falling from the sky (day maps),
+constexpr int VERSUS_SKY_SUN_RANDOM = 250;			// plus up to this; the normal game starts near here and slows down
 constexpr int VERSUS_FARM_RIPE_TIME = 12000;		// updates (2 min): drops become big suns (50)
 constexpr int VERSUS_FARM_FULL_TIME = 24000;		// updates (4 min): drops become a big sun and a sun (75)
 
