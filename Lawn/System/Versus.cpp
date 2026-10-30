@@ -2,6 +2,7 @@
 #include "../Board.h"
 #include "../Challenge.h"
 #include "../LawnMower.h"
+#include "../Coin.h"
 #include "../Plant.h"
 #include "../SeedPacket.h"
 #include "../Zombie.h"
@@ -52,27 +53,27 @@ const VersusZombieOffer gVersusZombieOffers[VERSUS_NUM_ZOMBIE_OFFERS] = {
 	// go by, so nobody can rush a Football Zombie before the other player has any defences. Nothing
 	// can be sent before the first natural wave, which gives both players time to set up.
 	// The heaviest zombies cost you income instead of earning it, like MOAB-class sends.
-	//  zombie							cost	cooldown	unlock wave	income loss
-	{ SeedType::SEED_ZOMBIE_NORMAL,			150,	200,		1,			0 },
-	{ SeedType::SEED_ZOMBIE_IMP,			115,	200,		1,			0 },
-	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	265,	300,		2,			0 },
-	{ SeedType::SEED_ZOMBIE_NEWSPAPER,		225,	300,		2,			0 },
-	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	265,	300,		3,			0 },
-	{ SeedType::SEED_ZOMBIE_SNORKEL,		225,	400,		3,			0 },	// pool maps only
-	{ SeedType::SEED_ZOMBIE_PAIL,			450,	450,		4,			0 },
-	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	415,	450,		4,			0 },
-	{ SeedType::SEED_ZOMBIE_LADDER,			450,	500,		5,			0 },
-	{ SeedType::SEED_ZOMBIE_BALLOON,		450,	500,		5,			0 },
-	{ SeedType::SEED_ZOMBIE_DOLPHIN_RIDER,	375,	500,		5,			0 },	// pool maps only
-	{ SeedType::SEED_ZOMBIE_DIGGER,			450,	600,		6,			0 },
-	{ SeedType::SEED_ZOMBIE_BUNGEE,			375,	600,		6,			0 },
-	{ SeedType::SEED_ZOMBIE_JACK_IN_THE_BOX,	400,	600,		6,			0 },
-	{ SeedType::SEED_ZOMBIE_POGO,			525,	600,		7,			0 },
-	{ SeedType::SEED_ZOMBIE_FOOTBALL,		675,	900,		7,			10 },
-	{ SeedType::SEED_ZOMBONI,				675,	900,		8,			10 },
-	{ SeedType::SEED_ZOMBIE_CATAPULT,		600,	900,		8,			10 },
-	{ SeedType::SEED_ZOMBIE_DANCER,			900,	1250,		9,			20 },
-	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		1125,	1750,		11,			30 },
+	//  zombie							cost	cooldown	unlock wave	income loss	pack tier
+	{ SeedType::SEED_ZOMBIE_NORMAL,			150,	200,		1,			0,			1 },
+	{ SeedType::SEED_ZOMBIE_IMP,			115,	200,		1,			0,			1 },
+	{ SeedType::SEED_ZOMBIE_TRAFFIC_CONE,	265,	300,		2,			0,			2 },
+	{ SeedType::SEED_ZOMBIE_NEWSPAPER,		225,	300,		2,			0,			2 },
+	{ SeedType::SEED_ZOMBIE_POLEVAULTER,	265,	300,		3,			0,			2 },
+	{ SeedType::SEED_ZOMBIE_SNORKEL,		225,	400,		3,			0,			2 },	// pool maps only
+	{ SeedType::SEED_ZOMBIE_PAIL,			450,	450,		4,			0,			3 },
+	{ SeedType::SEED_ZOMBIE_SCREEN_DOOR,	415,	450,		4,			0,			3 },
+	{ SeedType::SEED_ZOMBIE_LADDER,			450,	500,		5,			0,			3 },
+	{ SeedType::SEED_ZOMBIE_BALLOON,		450,	500,		5,			0,			3 },
+	{ SeedType::SEED_ZOMBIE_DOLPHIN_RIDER,	375,	500,		5,			0,			3 },	// pool maps only
+	{ SeedType::SEED_ZOMBIE_DIGGER,			450,	600,		6,			0,			3 },
+	{ SeedType::SEED_ZOMBIE_BUNGEE,			375,	600,		6,			0,			3 },
+	{ SeedType::SEED_ZOMBIE_JACK_IN_THE_BOX,	400,	600,		6,			0,			3 },
+	{ SeedType::SEED_ZOMBIE_POGO,			525,	600,		7,			0,			4 },
+	{ SeedType::SEED_ZOMBIE_FOOTBALL,		675,	900,		7,			10,			4 },
+	{ SeedType::SEED_ZOMBONI,				675,	900,		8,			10,			4 },
+	{ SeedType::SEED_ZOMBIE_CATAPULT,		600,	900,		8,			10,			4 },
+	{ SeedType::SEED_ZOMBIE_DANCER,			900,	1250,		9,			20,			5 },
+	{ SeedType::SEED_ZOMBIE_GARGANTUAR,		1125,	1750,		11,			30,			5 },
 };
 
 const VersusMapInfo gVersusMaps[NUM_VERSUS_MAPS] = {
@@ -791,13 +792,7 @@ void Versus::UpdateBounties(Board* theBoard)
 		{
 			TodTrace("Versus: bounty of %d sun", anIt->second);
 			int aSun = anIt->second * (IsEventActive(VERSUS_EVENT_GOLD_RUSH) ? 2 : 1);
-			int aX = (int)aZombie->mPosX + 30, aY = (int)aZombie->mPosY + 30;
-			for (; aSun >= 50; aSun -= 50)
-				theBoard->AddCoin(aX, aY, CoinType::COIN_LARGESUN, CoinMotion::COIN_MOTION_FROM_PLANT);
-			for (; aSun >= 25; aSun -= 25)
-				theBoard->AddCoin(aX, aY, CoinType::COIN_SUN, CoinMotion::COIN_MOTION_FROM_PLANT);
-			if (aSun >= 10)
-				theBoard->AddCoin(aX, aY, CoinType::COIN_SMALLSUN, CoinMotion::COIN_MOTION_FROM_PLANT);
+			AddCollectedSun(theBoard, (int)aZombie->mPosX + 30, (int)aZombie->mPosY + 30, aSun);
 		}
 		anIt = mBounties.erase(anIt);
 	}
@@ -919,7 +914,7 @@ void Versus::SendZombie(SeedType theSeedType, int theRow)
 	ZombieType aZombieType = Challenge::IZombieSeedTypeToZombieType(theSeedType);
 	if (aZombieType == ZombieType::ZOMBIE_GARGANTUAR && mWaveNumber >= VERSUS_GIGA_FROM_WAVE)
 		aZombieType = ZombieType::ZOMBIE_REDEYE_GARGANTUAR;
-	int aPackSize = GetPackSize();
+	int aPackSize = GetPackSize(theSeedType);
 	for (int i = 0; i < aPackSize; i++)
 	{
 		ByteWriter aWriter;
@@ -1344,15 +1339,70 @@ void Versus::AddFarmSun(Plant* thePlant)
 	}
 }
 
-int Versus::GetPackSize() const
+int Versus::GetPackSize(SeedType theSeedType) const
 {
-	int aSize = 1;
-	for (const VersusPackStep& aStep : VERSUS_PACK_STEPS)
+	int aTier = 0;
+	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
 	{
-		if (mWaveNumber >= aStep.mFromWave)
+		if (anOffer.mSeedType == theSeedType)
+			aTier = anOffer.mPackTier;
+	}
+	if (aTier < 1 || aTier > NUM_VERSUS_PACK_TIERS)
+		return 1;
+
+	int aSize = 1;
+	for (const VersusPackStep& aStep : VERSUS_PACK_STEPS[aTier - 1])
+	{
+		if (aStep.mSize > 0 && mWaveNumber >= aStep.mFromWave)
 			aSize = aStep.mSize;
 	}
 	return aSize;
+}
+
+// A pack costs its zombies' price less a discount per extra zombie, rounded to 5s
+int Versus::GetSendCost(SeedType theSeedType) const
+{
+	int aPackSize = GetPackSize(theSeedType);
+	int aCost = GetZombieCost(theSeedType) * aPackSize * (100 - VERSUS_PACK_DISCOUNT_PERCENT * (aPackSize - 1)) / 100;
+	return ApplySale((aCost + 2) / 5 * 5, VERSUS_EVENT_ZOMBIE_SALE);
+}
+
+int Versus::GetInstantKillCost(SeedType theSeedType)
+{
+	for (const VersusPlantCost& aCost : VERSUS_INSTANT_KILL_COSTS)
+	{
+		if (aCost.mSeedType == theSeedType)
+			return aCost.mCost;
+	}
+	return 0;
+}
+
+// Sun that goes straight to the bank (bounties and shovel refunds): it pops up and flies there by
+// itself instead of waiting to be clicked
+void Versus::AddCollectedSun(Board* theBoard, int theX, int theY, int theSun)
+{
+	auto anAdd = [theBoard, theX, theY](CoinType theType)
+	{
+		if (Coin* aCoin = theBoard->AddCoin(theX, theY, theType, CoinMotion::COIN_MOTION_FROM_PLANT))
+			aCoin->Collect();
+	};
+	for (; theSun >= 50; theSun -= 50)
+		anAdd(CoinType::COIN_LARGESUN);
+	for (; theSun >= 25; theSun -= 25)
+		anAdd(CoinType::COIN_SUN);
+	if (theSun >= 10)
+		anAdd(CoinType::COIN_SMALLSUN);
+}
+
+void Versus::OnPlantShoveled(Plant* thePlant)
+{
+	Board* aBoard = mApp->mBoard;
+	if (mState != VERSUS_STATE_PLAYING || aBoard == nullptr)
+		return;
+
+	int aRefund = (Plant::GetCost(thePlant->mSeedType, thePlant->mImitaterType) * VERSUS_SHOVEL_REFUND_PERCENT / 100 + 12) / 25 * 25;
+	if (aRefund > 0)
+		AddCollectedSun(aBoard, thePlant->mX + 20, thePlant->mY + 20, aRefund);
 }
 
 int Versus::GetIncomeChange(SeedType theSeedType) const
@@ -1360,7 +1410,7 @@ int Versus::GetIncomeChange(SeedType theSeedType) const
 	for (const VersusZombieOffer& anOffer : gVersusZombieOffers)
 	{
 		if (anOffer.mSeedType == theSeedType && anOffer.mIncomeLoss > 0)
-			return -std::min(anOffer.mIncomeLoss * GetPackSize(), std::max(mIncome - VERSUS_STARTING_INCOME, 0));
+			return -std::min(anOffer.mIncomeLoss * GetPackSize(theSeedType), std::max(mIncome - VERSUS_STARTING_INCOME, 0));
 	}
 	return GetIncomeGain(GetSendCost(theSeedType));
 }
@@ -1420,9 +1470,9 @@ void Versus::DrawZombiePacketOverlays(Graphics* g)
 		int aX = aSeedBank->mX + aPacket.mX, aY = aSeedBank->mY + aPacket.mY;
 		if (IsSeedUnlocked(aPacket.mPacketType))
 		{
-			if (Challenge::IsZombieSeedType(aPacket.mPacketType) && GetPackSize() > 1)
+			if (Challenge::IsZombieSeedType(aPacket.mPacketType) && GetPackSize(aPacket.mPacketType) > 1)
 			{
-				TodDrawString(g, StrFormat(__S("x%d"), GetPackSize()), aX + SEED_PACKET_WIDTH - 4, aY + 20,
+				TodDrawString(g, StrFormat(__S("x%d"), GetPackSize(aPacket.mPacketType)), aX + SEED_PACKET_WIDTH - 4, aY + 20,
 					FONT_CONTINUUMBOLD14, Color(255, 230, 90), DrawStringJustification::DS_ALIGN_RIGHT);
 			}
 			continue;
@@ -1563,10 +1613,8 @@ void Versus::DrawWaveInfo(Graphics* g)
 	Rect aRect = GetOpponentViewRect();
 	DrawCaption(g, aText, aRect.mY + aRect.mHeight + 28, Color(255, 255, 160));
 	SexyString aSends;
-	if (GetPackSize() > 1)
-		aSends = StrFormat(__S("Sends x%d"), GetPackSize());
 	if (GetToughnessPercent() > 0)
-		aSends += StrFormat(aSends.empty() ? __S("Sends +%d%% health") : __S(", +%d%% health"), GetToughnessPercent());
+		aSends = StrFormat(__S("Sends +%d%% health"), GetToughnessPercent());
 	if (!aSends.empty())
 		DrawCaption(g, aSends, aRect.mY + aRect.mHeight + 44, Color(255, 230, 90));
 

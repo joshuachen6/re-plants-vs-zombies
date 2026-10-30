@@ -5073,6 +5073,8 @@ static int GetBaseCost(SeedType theSeedType, SeedType theImitaterType)
         SeedType aFarmType = (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE) ? theImitaterType : theSeedType;
         if (int aFarmCost = Versus::GetFarmCost(aFarmType))
             return aFarmCost;
+        if (int anInstantKillCost = Versus::GetInstantKillCost(aFarmType))
+            return anInstantKillCost;
     }
 
     if (gLawnApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED || gLawnApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED_TWIST)
@@ -5172,8 +5174,14 @@ int Plant::GetRefreshTime(SeedType theSeedType, SeedType theImitaterType)
         return gLawnApp->IsVersusMode() ? Versus::GetZombieRefreshTime(theSeedType) * gLawnApp->mVersus->GetCooldownPercent() / 100 : 0;
     }
 
-    // Versus halves cooldowns so the match is about what you buy and when
-    int aPercent = gLawnApp->IsVersusMode() ? VERSUS_PLANT_COOLDOWN_PERCENT * gLawnApp->mVersus->GetCooldownPercent() / 100 : 100;
+    // Versus halves cooldowns so the match is about what you buy and when (except for instant kills)
+    SeedType aCooldownType = (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE) ? theImitaterType : theSeedType;
+    int aPercent = 100;
+    if (gLawnApp->IsVersusMode())
+    {
+        aPercent = Versus::GetInstantKillCost(aCooldownType) ? 100 : VERSUS_PLANT_COOLDOWN_PERCENT;
+        aPercent = aPercent * gLawnApp->mVersus->GetCooldownPercent() / 100;
+    }
     if (theSeedType == SeedType::SEED_IMITATER && theImitaterType != SeedType::SEED_NONE)
     {
         const PlantDefinition& aPlantDef = GetPlantDefinition(theImitaterType);

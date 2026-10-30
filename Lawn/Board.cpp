@@ -4246,6 +4246,10 @@ void Board::MouseDownWithTool(int x, int y, int theClickCount, CursorType theCur
 	{
 		mApp->PlayFoley(FoleyType::FOLEY_USE_SHOVEL);
 		mPlantsShoveled++;
+		if (mApp->IsVersusMode())
+		{
+			mApp->mVersus->OnPlantShoveled(aPlant);  // gives back part of its cost
+		}
 		aPlant->Die();
 
 		if (aPlant->mSeedType == SeedType::SEED_CATTAIL && GetTopPlantAt(aPlant->mPlantCol, aPlant->mRow, PlantPriority::TOPPLANT_ONLY_PUMPKIN))

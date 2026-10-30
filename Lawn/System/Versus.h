@@ -102,27 +102,56 @@ constexpr int VERSUS_SKY_SUN_RANDOM = 250;			// plus up to this; the normal game
 constexpr int VERSUS_FARM_RIPE_TIME = 12000;		// updates (2 min): drops become big suns (50)
 constexpr int VERSUS_FARM_FULL_TIME = 24000;		// updates (4 min): drops become a big sun and a sun (75)
 
-// Later in the match, each send is a pack of zombies at a multiple of the price: a sun sink for
-// the late game, and it keeps the pressure rising on both sides
+// Later in the match, each send is a pack of zombies: a sun sink for the late game that keeps the
+// pressure rising. Packs grow by tier, so cheap zombies come in big packs long before the heavy ones
+// pair up, and each extra zombie in a pack takes VERSUS_PACK_DISCOUNT_PERCENT off the pack's price.
 struct VersusPackStep
 {
 	int						mFromWave;
 	int						mSize;
 };
-constexpr VersusPackStep VERSUS_PACK_STEPS[] = { { 10, 2 }, { 18, 3 }, { 26, 4 } };
+constexpr int NUM_VERSUS_PACK_TIERS = 5;
+constexpr int VERSUS_MAX_PACK_STEPS = 4;
+constexpr VersusPackStep VERSUS_PACK_STEPS[NUM_VERSUS_PACK_TIERS][VERSUS_MAX_PACK_STEPS] = {
+	{ { 4, 2 }, { 8, 3 }, { 12, 4 }, { 16, 5 } },	// 1: Normal, Imp
+	{ { 8, 2 }, { 14, 3 }, { 20, 4 } },				// 2: Conehead, Newspaper, Pole Vaulter, Snorkel
+	{ { 12, 2 }, { 20, 3 } },						// 3: Buckethead, Screen Door, Ladder, Balloon, ...
+	{ { 18, 2 }, { 26, 3 } },						// 4: Pogo, Football, Zomboni, Catapult
+	{ { 24, 2 } },									// 5: Dancer, Gargantuar
+};
+constexpr int VERSUS_PACK_DISCOUNT_PERCENT = 5;
+
+// Instant kills cost more and recharge at the normal game's speed, so a lawn can't be held by
+// nothing but Cherry Bombs and Doom-shrooms
+struct VersusPlantCost
+{
+	SeedType				mSeedType;
+	int						mCost;
+};
+constexpr VersusPlantCost VERSUS_INSTANT_KILL_COSTS[] = {
+	{ SeedType::SEED_CHERRYBOMB,	300 },
+	{ SeedType::SEED_DOOMSHROOM,	300 },
+	{ SeedType::SEED_JALAPENO,		275 },
+	{ SeedType::SEED_SQUASH,		125 },
+	{ SeedType::SEED_POTATOMINE,	75 },
+	{ SeedType::SEED_TANGLEKELP,	75 },
+};
+
+// Shoveling a plant gives back this much of what it costs (rounded to 25), so a lawn can be rebuilt
+constexpr int VERSUS_SHOVEL_REFUND_PERCENT = 50;
 
 // Connection: if nothing arrives from the server for a while (it answers our keepalive pings), the
 // connection is treated as lost. Both games then pause while this one tries to rejoin; the server
 // holds our spot for 60 s.
 constexpr int VERSUS_KEEPALIVE_MS = 2000;
-constexpr int VERSUS_SILENCE_TIMEOUT_MS = 15000;
+constexpr int VERSUS_SILENCE_TIMEOUT_MS = 15000;	// long enough to ride out a stalled tab or a wifi hiccup
 // The server owns the match clock and sends it 10 times a second. A game never runs its lawn past the
 // clock (plus this many updates of extrapolation between messages), and one that has fallen behind
 // fast-forwards, so both lawns stay on the same match time whatever happens to either connection.
 constexpr int VERSUS_CLOCK_LEAD = 30;
 constexpr int VERSUS_CATCH_UP_THRESHOLD = 20;		// updates behind before fast-forwarding
 constexpr int VERSUS_MAX_UPDATES_PER_FRAME = 8;		// fast-forward speed
-constexpr int VERSUS_WAITING_NOTICE_MS = 1000;		// held this long, the board says it's waiting		// long enough to ride out a stalled tab or a wifi hiccup
+constexpr int VERSUS_WAITING_NOTICE_MS = 1000;		// held this long, the board says it's waiting
 constexpr int VERSUS_RECONNECT_INTERVAL_MS = 2000;
 constexpr int VERSUS_CONNECT_TIMEOUT_MS = 5000;
 constexpr int VERSUS_RECONNECT_GIVE_UP_MS = 55000;
@@ -155,6 +184,7 @@ struct VersusZombieOffer
 	int						mUnlockWave;			// can only be sent once this many natural waves have come
 	int						mIncomeLoss;			// if set, sending lowers income by this instead of raising it,
 													// like MOAB-class sends in Bloons TD Battles
+	int						mPackTier;				// 1 to NUM_VERSUS_PACK_TIERS, see VERSUS_PACK_STEPS
 };
 
 // Cooldowns of plants (and the zombie table's) are this fraction of the normal game's, so the match is
@@ -306,8 +336,11 @@ public:
 	static int				GetZombieCost(SeedType theSeedType);	// for one zombie
 	static int				GetFarmCost(SeedType theSeedType);		// 0 if it's not a sun producer
 	void					AddFarmSun(Plant* thePlant);
-	int						GetPackSize() const;
-	int						GetSendCost(SeedType theSeedType) const { return ApplySale(GetZombieCost(theSeedType) * GetPackSize(), VERSUS_EVENT_ZOMBIE_SALE); }
+	int						GetPackSize(SeedType theSeedType) const;
+	int						GetSendCost(SeedType theSeedType) const;
+	static int				GetInstantKillCost(SeedType theSeedType);	// 0 if not an instant kill
+	void					AddCollectedSun(Board* theBoard, int theX, int theY, int theSun);
+	void					OnPlantShoveled(Plant* thePlant);
 	bool					IsEventActive(VersusEvent theEvent) const { return mEvent == theEvent; }
 	int						ApplySale(int theCost, VersusEvent theSale) const;
 	int						GetCooldownPercent() const { return IsEventActive(VERSUS_EVENT_RAPID_RECHARGE) ? 50 : 100; }
