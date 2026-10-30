@@ -144,8 +144,8 @@ public:
 // Binary messages, relayed untouched by the server. Multi-byte values are little-endian.
 //   zombie   [1][seq u16][zombie type u8][row u8][match time u32]
 //   snapshot [2][sun u16][income u16][mower bits u8][brains u8]
-//            [plant count u8] { [x i16][y i16][seed type u8] }
-//            [zombie count u8] { [id u16][zombie type u8][x i16][y i16][flags u8] }
+//            [plant count u8] { [x i16][drawn y i16][seed type u8][row u8] }
+//            [zombie count u8] { [id u16][zombie type u8][x i16][y i16][flags u8][row u8] }
 //   lost     [3][seq u16]
 //   resume   [4][last seq received u16]   sent after a reconnect; the other side resends what's missing
 // Messages with a seq are reliable: numbered from 1, kept by the sender, and ignored if already seen.
@@ -975,9 +975,11 @@ void Versus::SendSnapshot(Board* theBoard)
 	for (Plant* p : aPlants)
 	{
 		SeedType aSeedType = p->mSeedType == SeedType::SEED_IMITATER && p->mImitaterType != SeedType::SEED_NONE ? p->mImitaterType : p->mSeedType;
+		// raised the way the board draws it, e.g. on a flower pot or lily pad
 		aWriter.U16(p->mX);
-		aWriter.U16(p->mY);
+		aWriter.U16(p->mY + (int)PlantDrawHeightOffset(theBoard, p, p->mSeedType, p->mPlantCol, p->mRow));
 		aWriter.U8(aSeedType);
+		aWriter.U8(p->mRow);
 	}
 
 	std::vector<Zombie*> aZombies;
@@ -1001,6 +1003,7 @@ void Versus::SendSnapshot(Board* theBoard)
 		aWriter.U16((int)z->mPosX);
 		aWriter.U16((int)z->mPosY);
 		aWriter.U8(aFlags);
+		aWriter.U8(z->mRow);
 	}
 
 	mConnection.SendBinary(aWriter.mData);
@@ -1021,6 +1024,7 @@ void Versus::ReadSnapshot(const std::string& theData)
 		aPlant.mX = aReader.S16();
 		aPlant.mY = aReader.S16();
 		aPlant.mSeedType = (SeedType)aReader.U8();
+		aPlant.mRow = aReader.U8();
 	}
 
 	std::vector<VersusRemoteZombie> aZombies(aReader.U8());
@@ -1031,6 +1035,7 @@ void Versus::ReadSnapshot(const std::string& theData)
 		aZombie.mTargetX = aReader.S16();
 		aZombie.mTargetY = aReader.S16();
 		aZombie.mFlags = aReader.U8();
+		aZombie.mRow = aReader.U8();
 		aZombie.mX = aZombie.mTargetX;
 		aZombie.mY = aZombie.mTargetY;
 
@@ -1565,24 +1570,46 @@ void Versus::DrawOpponentView(Graphics* g)
 			mApp->mReanimatorCache->DrawCachedMower(&aView, OpponentViewX(0) + 20, OpponentViewY(aBoard->GridToPixelY(0, aRow) + 23), aMowerType);
 		}
 	}
-	for (const VersusRemotePlant& aPlant : mOpponentPlants)
+	// Like the board: row by row from the back, and in each row what plants sit on (pots, lily pads),
+	// then plants, then what covers them (pumpkins, coffee beans), then zombies
+	auto aPlantLayer = [](SeedType theSeedType)
 	{
-		mApp->mReanimatorCache->DrawCachedPlant(&aView, OpponentViewX(aPlant.mX), OpponentViewY(aPlant.mY), aPlant.mSeedType, DrawVariation::VARIATION_NORMAL);
-	}
-	for (const VersusRemoteZombie& aZombie : mOpponentZombies)
+		switch (theSeedType)
+		{
+		case SeedType::SEED_FLOWERPOT:
+		case SeedType::SEED_LILYPAD:		return 0;
+		case SeedType::SEED_PUMPKINSHELL:	return 2;
+		case SeedType::SEED_INSTANT_COFFEE:	return 3;
+		default:							return 1;
+		}
+	};
+	for (int aRow = 0; aRow < MAX_GRID_SIZE_Y; aRow++)
 	{
-		if (aZombie.mFlags & VERSUS_ZOMBIE_CHILLED)
+		for (int aLayer = 0; aLayer <= 3; aLayer++)
 		{
-			aView.SetColorizeImages(true);
-			aView.SetColor(Color(75, 75, 255));
+			for (const VersusRemotePlant& aPlant : mOpponentPlants)
+			{
+				if (aPlant.mRow == aRow && aPlantLayer(aPlant.mSeedType) == aLayer)
+					mApp->mReanimatorCache->DrawCachedPlant(&aView, OpponentViewX(aPlant.mX), OpponentViewY(aPlant.mY), aPlant.mSeedType, DrawVariation::VARIATION_NORMAL);
+			}
 		}
-		else if (aZombie.mFlags & VERSUS_ZOMBIE_DYING)
+		for (const VersusRemoteZombie& aZombie : mOpponentZombies)
 		{
-			aView.SetColorizeImages(true);
-			aView.SetColor(Color(255, 255, 255, 128));
+			if (aZombie.mRow != aRow)
+				continue;
+			if (aZombie.mFlags & VERSUS_ZOMBIE_CHILLED)
+			{
+				aView.SetColorizeImages(true);
+				aView.SetColor(Color(75, 75, 255));
+			}
+			else if (aZombie.mFlags & VERSUS_ZOMBIE_DYING)
+			{
+				aView.SetColorizeImages(true);
+				aView.SetColor(Color(255, 255, 255, 128));
+			}
+			mApp->mReanimatorCache->DrawCachedZombie(&aView, OpponentViewX(aZombie.mX - 40), OpponentViewY(aZombie.mY - 40), aZombie.mZombieType);
+			aView.SetColorizeImages(false);
 		}
-		mApp->mReanimatorCache->DrawCachedZombie(&aView, OpponentViewX(aZombie.mX - 40), OpponentViewY(aZombie.mY - 40), aZombie.mZombieType);
-		aView.SetColorizeImages(false);
 	}
 
 	// Highlight the lane a held zombie packet would go to

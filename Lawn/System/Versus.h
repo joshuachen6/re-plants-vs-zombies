@@ -226,6 +226,7 @@ struct VersusRemotePlant
 	int16_t					mX;
 	int16_t					mY;
 	SeedType				mSeedType;
+	uint8_t					mRow;
 };
 
 struct VersusPendingZombie
@@ -240,6 +241,7 @@ struct VersusRemoteZombie
 	uint16_t				mId;
 	ZombieType				mZombieType;
 	uint8_t					mFlags;
+	uint8_t					mRow;
 	float					mX, mY;					// drawn position, eased towards the target
 	float					mTargetX, mTargetY;
 };
