@@ -124,6 +124,18 @@ async function main() {
 		d.close();
 		a.close();
 
+		// Games of different versions can't play each other
+		const g = await connect(relay.port);
+		const h = await connect(relay.port);
+		sendJson(g, { t: 'create', v: 2 });
+		const room4 = await next(g);
+		sendJson(h, { t: 'join', code: room4.code });
+		assert.deepStrictEqual(await next(h), { t: 'error', msg: 'That room was made with a different version of the game. Both players need to reload the page' });
+		sendJson(h, { t: 'join', code: room4.code, v: 2 });
+		assert.strictEqual((await next(h)).t, 'joined');
+		g.close();
+		h.close();
+
 		// The match clock starts once both games are playing, runs at 100 updates a second and stops
 		// while a player is gone
 		const e = await connect(relay.port);

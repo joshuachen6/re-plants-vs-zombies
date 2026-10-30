@@ -6,8 +6,8 @@
 // untouched to the other player in the room.
 //
 //   client -> server                          server -> client
-//     {"t":"create","map":2}                     {"t":"created","code":"ABCD","token":"..."}
-//     {"t":"join","code":"ABCD"}                 {"t":"joined","code":"ABCD","token":"...","map":2}
+//     {"t":"create","map":2,"v":2}               {"t":"created","code":"ABCD","token":"..."}
+//     {"t":"join","code":"ABCD","v":2}           {"t":"joined","code":"ABCD","token":"...","map":2}
 //     {"t":"rejoin","code":"ABCD","token":"..."} {"t":"rejoined","code":"ABCD","go":true,"opponentConnected":true,"opponentReady":true}
 //     {"t":"ready"}                              {"t":"opponent_joined"}
 //     {"t":"leave"}                              {"t":"start","seed":123,"map":2}
@@ -185,7 +185,9 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 				const code = newCode();
 				const slot = newSlot(ws);
 				const map = Number.isInteger(msg.map) && msg.map >= 0 && msg.map < NUM_MAPS ? msg.map : 0;
-				rooms.set(code, { code, slots: [slot], ready: new Set(), started: false, seed: 0, map,
+				// games only understand each other's messages if they're the same version
+				const version = Number.isInteger(msg.v) ? msg.v : 0;
+				rooms.set(code, { code, slots: [slot], ready: new Set(), started: false, seed: 0, map, version,
 					playing: new Set(), clock: { at: 0, running: false, lastMs: 0 } });
 				ws.room = code;
 				log(`client ${ws.id} created room ${code} (map ${map})`);
@@ -199,6 +201,9 @@ function createRelay({ port, host, staticDir, log = console.log, graceMs = RECON
 				if (!target) return send(ws, { t: 'error', msg: 'No room with that code' });
 				if (target.slots.length >= 2) return send(ws, { t: 'error', msg: 'That room is full' });
 				if (target.slots[0].ws === ws) return send(ws, { t: 'error', msg: 'You are already in that room' });
+				if ((Number.isInteger(msg.v) ? msg.v : 0) !== target.version) {
+					return send(ws, { t: 'error', msg: 'That room was made with a different version of the game. Both players need to reload the page' });
+				}
 
 				leaveCurrentRoom(ws);
 				const slot = newSlot(ws);

@@ -144,6 +144,8 @@ constexpr int VERSUS_SHOVEL_REFUND_PERCENT = 50;
 // connection is treated as lost. Both games then pause while this one tries to rejoin; the server
 // holds our spot for 60 s.
 constexpr int VERSUS_KEEPALIVE_MS = 2000;
+// Bumped whenever the messages between games change; the server only pairs games with the same one
+constexpr int VERSUS_PROTOCOL_VERSION = 2;
 constexpr int VERSUS_SILENCE_TIMEOUT_MS = 15000;	// long enough to ride out a stalled tab or a wifi hiccup
 // The server owns the match clock and sends it 10 times a second. A game never runs its lawn past the
 // clock (plus this many updates of extrapolation between messages), and one that has fallen behind

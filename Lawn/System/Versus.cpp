@@ -355,9 +355,9 @@ void Versus::Update()
 				break;
 			}
 			if (mJoinCode.empty())
-				mConnection.SendText(StrFormat("{\"t\":\"create\",\"map\":%d}", (int)mMap));
+				mConnection.SendText(StrFormat("{\"t\":\"create\",\"map\":%d,\"v\":%d}", (int)mMap, VERSUS_PROTOCOL_VERSION));
 			else
-				mConnection.SendText("{\"t\":\"join\",\"code\":\"" + mJoinCode + "\"}");
+				mConnection.SendText(StrFormat("{\"t\":\"join\",\"code\":\"%s\",\"v\":%d}", mJoinCode.c_str(), VERSUS_PROTOCOL_VERSION));
 			mStatus = mJoinCode.empty() ? "Creating a room..." : "Joining room " + mJoinCode + "...";
 			break;
 
